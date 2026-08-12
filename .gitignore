@@ -30,3 +30,7 @@ reports/*
 
 # 단, 샘플 1,000건은 커밋한다 — 다운로드 없이 더러움을 관찰할 수 있어야 한다
 !data/sample/
+
+# 받아온 배포물 (수 GB) — 커밋하지 않는다
+data/dist/*
+!data/dist/.gitkeep

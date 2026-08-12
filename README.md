@@ -188,6 +188,69 @@ docker compose exec api uv run python scripts/make_sample.py \
 3,500배입니다. 같은 문자열을 4만 번 다시 물을 이유가 없습니다.
 `nunique()` 한 줄이 견적서를 다시 쓰게 만듭니다 — **LLM에 보내기 전에 세어보세요.**
 
+## 벡터 인덱스 받아서 쓰기
+
+의미 검색을 쓰려면 벡터 인덱스가 있어야 합니다. **직접 임베딩하지 마세요.**
+30만 건 임베딩은 세 시간에 $2.29이고, 이미 돌려서 배포해 뒀습니다.
+
+### 방법 1: chroma 인덱스를 그대로 받기 (권장, 빌드 없음)
+
+```bash
+mkdir -p data/dist
+# 릴리즈/Drive에서 받은 파일을 data/dist/ 에 둡니다
+mv ~/Downloads/chroma_foods.tar.gz data/dist/
+
+docker compose up
+```
+
+끝입니다. `index-restore` 서비스가 압축을 풀고, `chroma`가 그 위에서 뜨고,
+`index-load`는 이미 차 있는 걸 보고 그냥 나갑니다. **한 번 풀리고 나면 다음
+`compose up`부터는 아무 일도 일어나지 않습니다** (멱등).
+
+```
+[restore] chroma_foods.tar.gz 를 풉니다 (몇 분 걸립니다)
+[restore] 완료 — 빌드 없이 바로 씁니다
+[C] foods_name_cat 이미 265,986건 — 건너뜁니다
+[A] foods_name 이미 262,205건 — 건너뜁니다
+```
+
+### 방법 2: 벡터 파일을 받아 직접 적재 (더 작게 받기)
+
+```bash
+mv ~/Downloads/probe_vectors.tar.gz data/dist/
+docker compose up          # 풀고 → 적재까지 자동, 약 8분
+```
+
+받는 용량은 작지만 적재에 시간이 듭니다. 어느 쪽이든 **임베딩 API는 부르지
+않습니다.**
+
+| | 받는 용량 | 첫 기동 |
+| --- | --- | --- |
+| chroma 인덱스 | 약 2GB | 압축 풀기만 |
+| 벡터 파일 | 약 1.5GB | + 적재 8분 |
+
+### 컬렉션 두 개
+
+| 컬렉션 | 조립안 | 건수 | 쓰임 |
+| --- | --- | --- | --- |
+| `foods_name_cat` | 식품명 + 대/중/소분류 | 265,986 | 서비스가 쓰는 것 |
+| `foods_name` | 식품명만 | 262,205 | 비교용 |
+
+UI의 **임베딩 비교** 페이지에서 같은 질의를 둘에 던져 볼 수 있습니다.
+
+### 근사 검색이라는 것
+
+HNSW는 전수 비교가 아닙니다. 질의가 14ms로 끝나는 대신 **상위 결과를 놓칠 수
+있습니다.** 기본 파라미터로 적재했을 때 recall@10이 68%였고, 아래로 올려
+80%가 됐습니다.
+
+```python
+HNSW = {"space": "cosine", "max_neighbors": 32, "ef_construction": 200, "ef_search": 200}
+```
+
+`max_neighbors`는 **색인을 만들 때** 정해집니다. 나중에 질의 파라미터를 아무리
+올려도 못 고칩니다. 배포된 인덱스는 위 설정으로 만들어졌습니다.
+
 ## 저장소 구조
 
 ```
@@ -198,10 +261,13 @@ docker compose exec api uv run python scripts/make_sample.py \
 ├── data/
 │   ├── sample/            #   커밋된 층화 샘플 1,000건
 │   ├── raw/  clean/       #   원본·정제 산출물 (gitignore)
-│   └── pg/  chroma/       #   서비스 볼륨 (2·3회전이 채움)
+│   ├── pg/  chroma/       #   서비스 볼륨 (2·3회전이 채움)
+│   └── dist/              #   받아온 배포물을 두는 곳 (여기 두면 자동 복원)
 ├── reports/               # 정제는 코드가 아니라 리포트로 검증한다
 ├── scripts/               # download_file · download_api · make_sample
-├── docker-compose.yml     # api + ui (db는 2회전, chroma는 3회전이 추가)
+│                          #   embed_probe(임베딩 A/B) · load_chroma(적재)
+├── docker-compose.yml     # api + ui + chroma + index-restore + index-load
+│                          #   (db는 2회전, chroma는 3회전이 추가)
 └── PROMPT.md              # 회전별 지시 프롬프트 기록
 ```
 

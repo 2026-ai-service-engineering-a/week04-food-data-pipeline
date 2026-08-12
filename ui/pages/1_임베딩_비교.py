@@ -34,17 +34,23 @@ except requests.RequestException as exc:
 ready = [m for m in modes["modes"] if m["ready"]]
 if not ready:
     st.warning(
-        "비교할 벡터가 없습니다. 먼저 프로브를 돌리세요.\n\n"
-        "`docker compose exec api uv run python scripts/embed_probe.py "
-        "--input data/raw/<원본>.xlsx --variants A,C --workers 8`"
+        "비교할 컬렉션이 비어 있습니다. 둘 중 하나를 하세요.\n\n"
+        "1. 배포된 인덱스를 `data/dist/chroma_foods.tar.gz` 에 두고 `docker compose up`\n"
+        "2. 벡터를 직접 뽑아 적재: `docker compose exec api uv run python "
+        "scripts/embed_probe.py --input data/raw/<원본>.xlsx --variants A,C --workers 8` "
+        "→ `docker compose run --rm index-load`"
     )
     st.stop()
 
 cols = st.columns(len(ready) + 1)
-cols[0].metric("색인 대상", f"{modes['rows']:,}건")
+cols[0].metric("벡터 저장소", modes.get("store", "chroma"))
 for col, m in zip(cols[1:], ready):
-    col.metric(f"{m['tag']} · {m['label']}", f"{m['size_mb']:,}MB")
-st.caption(f"{modes['dim']}차원 · 벡터 DB 없이 memmap + numpy로 전량 코사인 (약 0.6초)")
+    col.metric(f"{m['tag']} · {m['label']}", f"{m['count']:,}건")
+st.caption(
+    f"{modes['dim']}차원 · chroma 컬렉션 두 개 · HNSW 근사 검색(약 14ms). "
+    "전수 비교(약 600ms)와 달리 **근사라서 상위 결과를 놓칠 수 있습니다** — "
+    "recall@10이 80% 수준입니다."
+)
 
 st.divider()
 
@@ -117,6 +123,10 @@ if st.button("두 조립안에 던지기", type="primary", use_container_width=T
         "**점수를 서로 비교하지 마세요.** 조립안이 다르면 텍스트 길이가 달라 "
         "유사도의 스케일 자체가 다릅니다. 짧은 텍스트일수록 점수가 높게 나옵니다. "
         "비교할 것은 점수가 아니라 **어떤 물건이 올라왔는가**입니다."
+    )
+    st.caption(
+        "그리고 이 결과는 **근사**입니다. HNSW는 전수 비교가 아니라 그래프를 타고 "
+        "내려가며 후보를 좁히므로, 진짜 1위를 놓치기도 합니다. 43배 빠른 대가입니다."
     )
 
 with st.sidebar:

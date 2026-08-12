@@ -1,5 +1,6 @@
 # 공통 정의 — v0.1은 api + ui 두 서비스뿐이다.
-#   db(PostgreSQL) 서비스는 2회전이, chroma(벡터 DB) 서비스는 3회전이 더한다.
+#   db(PostgreSQL) 서비스는 2회전이 더한다.
+#   chroma(벡터 DB)와 index-restore는 3회전이 더한다.
 #   인프라가 필요해지면 블록 하나를 더하는 것, 그것이 compose를 쓰는 이유다.
 #
 #   실행 모드: docker compose up --build
@@ -15,6 +16,12 @@ services:
         required: false # v0.1은 키 없이도 뜬다 (빈 상태 안내)
     environment:
       TZ: Asia/Seoul
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+    depends_on:
+      # 인덱스 적재가 끝난 뒤에 뜬다. 반쯤 찬 컬렉션으로 검색하는 사고를 막는다
+      index-load:
+        condition: service_completed_successfully
     volumes:
       # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
       # 컨테이너 안에서 쓰기가 일어나므로 read-only가 아니다.
@@ -23,6 +30,68 @@ services:
       - ./data:/app/data
       - ./reports:/app/reports
       - ./scripts:/app/scripts:ro
+
+  # 배포된 벡터 인덱스를 자동 복원하는 일회성 서비스.
+  #   data/dist/chroma_foods.tar.gz 를 넣어두고 compose up 하면 알아서 풀린다.
+  #   이미 복원돼 있으면(chroma.sqlite3 존재) 아무 것도 하지 않는다 — 멱등하다.
+  #   "받는 방법은 레포 안"의 연장이다. 받은 것을 어디에 두면 되는지도 코드에 있다.
+  index-restore:
+    image: alpine:3.20
+    container_name: food-pipeline-index-restore
+    volumes:
+      - ./data:/data
+    command: >
+      sh -c '
+      if [ -f /data/chroma/chroma.sqlite3 ]; then
+        echo "[restore] chroma 인덱스가 이미 있습니다 — 건너뜁니다";
+      elif [ -f /data/dist/chroma_foods.tar.gz ]; then
+        echo "[restore] chroma_foods.tar.gz 를 풉니다 (2.2GB, 몇 분 걸립니다)";
+        mkdir -p /data/chroma && tar xzf /data/dist/chroma_foods.tar.gz -C /data/chroma &&
+        echo "[restore] 완료 — 빌드 없이 바로 씁니다";
+      elif [ -f /data/dist/probe_vectors.tar.gz ] && [ ! -f /data/clean/.probe_C.f32 ]; then
+        echo "[restore] probe_vectors.tar.gz 를 풉니다 (1.5GB)";
+        mkdir -p /data/clean && tar xzf /data/dist/probe_vectors.tar.gz -C /data/clean &&
+        echo "[restore] 완료 — index-load가 이어서 chroma에 적재합니다 (약 8분)";
+      elif [ -f /data/clean/.probe_C.f32 ]; then
+        echo "[restore] 벡터 파일이 있습니다 — index-load가 적재합니다";
+      else
+        echo "[restore] 배포물이 없습니다. 의미 검색 없이 뜹니다.";
+        echo "  받아서 쓰기: 릴리즈의 chroma_foods.tar.gz 를 data/dist/ 에 두고 다시 compose up";
+        echo "  직접 만들기: docker compose run --rm index-load";
+      fi'
+
+  chroma:
+    image: chromadb/chroma:1.5.9 # 클라이언트와 버전을 맞춘다. 배포 인덱스도 이 버전 기준이다
+    container_name: food-pipeline-chroma
+    volumes:
+      - ./data/chroma:/data
+    environment:
+      TZ: Asia/Seoul
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    depends_on:
+      # 복원이 끝난 뒤에 뜬다. 반쯤 풀린 디렉터리를 여는 사고를 막는다
+      index-restore:
+        condition: service_completed_successfully
+
+  # 벡터 파일 → chroma 적재. compose up에서 자동으로 한 번 돌고 끝난다.
+  #   이미 적재됐거나 벡터 파일이 없으면 아무 것도 안 하고 나간다 (멱등하다).
+  #   임베딩은 하지 않는다 — 비싼 단계의 산출물은 파일로 받아 오고, 싼 적재만 여기서 한다.
+  #   일부만 다시 싣고 싶으면: docker compose run --rm index-load --only C
+  index-load:
+    build: ./api
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts:ro
+      - ./reports:/app/reports
+    environment:
+      TZ: Asia/Seoul
+      CHROMA_HOST: chroma
+      CHROMA_PORT: "8000"
+    depends_on:
+      - chroma
+    entrypoint: ["uv", "run", "--no-sync", "python", "scripts/load_chroma.py"]
+    restart: "no"
 
   ui:
     build: ./ui
