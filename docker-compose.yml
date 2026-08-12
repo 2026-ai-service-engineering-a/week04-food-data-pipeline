@@ -23,8 +23,8 @@ services:
       # 복원이 끝난 뒤에 뜬다. 반쯤 놓인 파일을 읽는 사고를 막는다
       data-restore:
         condition: service_completed_successfully
-      db:
-        condition: service_healthy
+      db-restore:
+        condition: service_completed_successfully
     volumes:
       # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
       # 컨테이너 안에서 쓰기가 일어나므로 read-only가 아니다.
@@ -64,6 +64,21 @@ services:
       interval: 3s
       timeout: 3s
       retries: 20
+
+  # 배포된 pg 덤프를 복원하는 일회성 서비스.
+  #   parquet과 달리 덤프는 파일을 옮겨서 끝나지 않는다. db가 받을 준비가 된
+  #   뒤에 돌아야 하고, api는 이게 끝나기를 기다려야 한다.
+  db-restore:
+    image: postgres:17-alpine
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/food
+    volumes:
+      - ./data:/data
+      - ./scripts:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "/scripts/restore_db.sh"]
 
   ui:
     build: ./ui
