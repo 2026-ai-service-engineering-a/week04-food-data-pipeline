@@ -65,3 +65,45 @@ def test_sort_is_a_total_order():
 
     assert SORT_TIEBREAK == "code asc"
     assert all(" " in expr for expr in SORTS.values())
+
+
+def test_semantic_degrades_without_index(monkeypatch):
+    """벡터 DB가 없는 것도 오류가 아니라 아직 그 회전이 안 온 것이다.
+
+    CI에는 chroma도 임베딩 키도 없다. 그 조건에서 500이 아니라 안내가 나와야
+    UI의 의미 검색 탭이 "3회전에서 살아납니다"를 계속 보여줄 수 있다.
+    """
+    from app import semantic
+
+    monkeypatch.setattr(semantic, "CHROMA_HOST", "127.0.0.1")
+    monkeypatch.setattr(semantic, "CHROMA_PORT", 1)
+    semantic.client.cache_clear()
+    body = client.get("/foods/semantic", params={"q": "매콤한 분식"}).json()
+    assert body["total"] == 0
+    assert "message" in body
+    semantic.client.cache_clear()
+
+
+def test_assemble_drops_empty_categories():
+    """'해당없음'은 26만 건에 들어 있다. 신호가 아니라 배경이라 빼야 한다."""
+    from pipeline.embed_index import assemble
+
+    row = {"name": "소금빵", "category_big": "과자류", "category_mid": "해당없음",
+           "category_small": ""}
+    assert assemble(row) == "소금빵 · 과자류"
+
+
+def test_normalize_makes_unit_length():
+    """768로 자른 벡터는 길이가 0.59다. 정규화 없이 코사인을 재면 틀린다."""
+    from pipeline.embed_index import normalize
+
+    out = normalize([3.0, 4.0])
+    assert abs(sum(x * x for x in out) - 1.0) < 1e-9
+
+
+def test_retry_delay_is_read_from_the_response():
+    """429는 '언제 오라'고 알려 주는 응답이다. 지수 백오프로 찍지 않는다."""
+    from pipeline.embed_index import sleep_for_retry
+
+    assert sleep_for_retry(Exception("... 'retryDelay': '27s' ...")) == 27.0
+    assert sleep_for_retry(Exception("연결 실패")) == 10.0

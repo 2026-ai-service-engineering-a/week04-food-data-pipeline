@@ -20,7 +20,7 @@ data/raw/*
 data/clean/*
 !data/clean/.gitkeep
 
-# 서비스 볼륨 — 3회전(db)·4회전(chroma)이 채운다
+# 서비스 볼륨 — 2회전(db)·3회전(chroma)이 채운다
 data/pg/
 data/chroma/
 
@@ -31,12 +31,18 @@ reports/*
 # 단, 샘플 1,000건은 커밋한다 — 다운로드 없이 더러움을 관찰할 수 있어야 한다
 !data/sample/
 
+# 받아온 배포물 (수 GB) — 커밋하지 않는다
+data/dist/*
+!data/dist/.gitkeep
+
+# macOS 부스러기
+.DS_Store
+._*
+
 # 배포용 아카이브 — 수 GB짜리가 git add -A에 쓸려 들어가는 사고를 막는다
 *.tar.gz
 *.tgz
 *.zip
-data/dist/*
-!data/dist/.gitkeep
 data/MANIFEST.json
 
 # 릴리즈 자산을 마는 자리

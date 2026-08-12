@@ -29,12 +29,16 @@ cd week04-food-data-pipeline
 git switch -c week04 v0.1
 
 cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose up --build
 ```
 
 - UI: http://localhost:8501 · API 문서(Swagger): http://localhost:8000/docs
 - v0.1은 **키 없이도 뜹니다** — UI에 "데이터가 아직 없습니다" 빈 상태 화면이 나옵니다
 - v0.1이 v1.0이 되는 순간은 코드가 아니라 **이 화면이 채워지는 순간**입니다
+- v0.1에는 `api`와 `ui` 두 서비스뿐입니다. `db`는 2회전이, `chroma`는 3회전이 더합니다
+
+**의미 검색을 써보려면 v1.0이 필요합니다.** 벡터 인덱스를 받아 쓰는 절차는
+아래 [벡터 인덱스 받아서 쓰기](#벡터-인덱스-받아서-쓰기)에 있습니다.
 
 회전마다 릴리즈 태그를 자릅니다. 태그 하나가 "이 지점의 코드 + 이 지점의 데이터"를
 가리킵니다.
@@ -43,7 +47,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | --- | --- | --- | --- |
 | 1회전 정제 + 섭취참고량 파싱 | `feature/clean` | v0.2 | `foods_parsed.parquet` · `clean_report.txt` · `parse_report.txt` · `rejected.csv` |
 | 2회전 PostgreSQL 검색 서비스 | `feature/pg-service` | v0.3 | `foods.dump` (pg_dump) |
-| 3회전 RAG 검색 | `feature/rag-search` | v1.0 | `chroma_foods.tar.gz` (Google Drive) · `embed_report.txt` |
+| 3회전 RAG 검색 | `feature/rag-search` | v1.0 | `foods.dump` 위 RAG API · `embed_report.txt` |
 
 ## 데이터
 
@@ -188,6 +192,142 @@ docker compose exec api uv run python scripts/make_sample.py \
 3,500배입니다. 같은 문자열을 4만 번 다시 물을 이유가 없습니다.
 `nunique()` 한 줄이 견적서를 다시 쓰게 만듭니다 — **LLM에 보내기 전에 세어보세요.**
 
+## 벡터 인덱스 받아서 쓰기
+
+> 3회전(v1.0)부터 해당합니다. v0.1에는 `chroma` 서비스가 없습니다.
+
+의미 검색을 쓰려면 벡터 인덱스가 있어야 합니다. **직접 임베딩하지 마세요.**
+30만 건 임베딩은 세 시간에 $2.29이고, 이미 돌려서 배포해 뒀습니다.
+
+### 받는 법 (v1.0에서)
+
+[**chroma_foods.tar.gz 내려받기**](https://drive.google.com/file/d/1hiS6EaDuYY4P2O5RKoDzN1PL4tEFJNWb/view)
+(1.6GB · SHA-256 `f61cfc6e892447f05fd5bf76f42cbfd59285188a0949b0f4d945861b17e455f6`)
+
+```bash
+mkdir -p data/dist
+mv ~/Downloads/chroma_foods.tar.gz data/dist/     # 받은 파일을 여기 둔다
+
+docker compose up                                  # 끝
+```
+
+압축을 직접 풀 필요도, 경로를 맞출 필요도 없습니다. compose가 순서대로 밟습니다.
+
+```
+index-restore  →  chroma  →  index-load  →  api  →  ui
+   아카이브를 푼다   그 위에서 뜬다   비었으면 채운다   그 뒤에 뜬다
+```
+
+```
+[restore] chroma_foods.tar.gz 를 풉니다 (몇 분 걸립니다)
+[restore] 완료 — 적재 없이 바로 씁니다
+[restore] 받은 인덱스 정보:
+  만든 날짜: 2026-08-12T07:52:11Z
+  chroma 버전: chromadb/chroma:1.5.9
+  임베딩 모델: gemini/gemini-embedding-001
+[C] foods_name_cat 이미 265,986건 — 건너뜁니다
+```
+
+- **멱등합니다.** 두 번째 `compose up`부터는 아무 일도 일어나지 않습니다.
+- **배포물이 없어도 뜹니다.** 받는 법을 출력하고 의미 검색만 빠집니다.
+- 순서는 `depends_on: service_completed_successfully`가 강제합니다. 반쯤 풀린 디렉터리를 열거나 반쯤 찬 컬렉션으로 검색하는 사고가 구조적으로 막힙니다.
+
+### 받을 것은 하나입니다
+
+`chroma_foods.tar.gz` (1.6GB) 하나면 됩니다. **임베딩 API를 부르지 않고,
+벡터 파일도 필요 없습니다.** 컬렉션이 만들어진 상태 그대로라 압축만 풀면
+바로 검색이 됩니다.
+
+버전이 어긋날 걱정도 없습니다. chroma는 이 저장소의 compose가 띄우고
+이미지가 `chromadb/chroma:1.5.9`로 고정돼 있어서, **학생이 다른 버전을 쓸
+경로 자체가 없습니다.**
+
+호스트 종류도 상관없습니다. arm64(Apple Silicon)에서 만든 색인을 x86_64에서
+열어 같은 결과가 나오는 것을 확인했습니다.
+
+### `data/chroma/` 안의 UUID 폴더는 무엇인가
+
+압축을 풀면 `221a5ffe-f667-…` 같은 폴더가 보입니다. 사람이 붙인 이름이 아니라
+**컬렉션 세그먼트 ID**이고, 같은 디렉터리의 `chroma.sqlite3`가 참조하는 값입니다.
+
+```sql
+select id, name from collections;
+-- 0279c37c-…  foods_name
+-- d9adb957-…  foods_name_cat
+select id, collection from segments;
+-- 221a5ffe-…  0279c37c-…
+```
+
+그래서 **디렉터리 통째로가 이식 단위**입니다. 일부만 옮기거나 폴더 이름을 바꾸면
+깨집니다. 아카이브가 `data/chroma/` 전체를 담는 이유입니다.
+
+호스트 종류는 상관없습니다. arm64(Apple Silicon)에서 만든 색인을 x86_64에서
+열어 같은 결과가 나오는 것을 확인했습니다.
+
+### 색인을 직접 다시 만들고 싶다면 (선택)
+
+HNSW 설정을 바꿔 recall이 어떻게 달라지는지 보고 싶다면 벡터가 필요합니다.
+그때만 `probe_vectors.tar.gz`(1.4GB)를 받으세요. 역시 `data/dist/`에 두면
+`compose up`이 풀고 적재까지 합니다 (약 8분). 이쪽도 임베딩 API는 안 부릅니다.
+
+```bash
+mv ~/Downloads/probe_vectors.tar.gz data/dist/
+rm -rf data/chroma/*                    # 기존 색인을 비우고
+HNSW_M=64 docker compose run --rm index-load   # 다른 설정으로 다시
+```
+
+### 사본을 두 개 띄울 때 (멘토용)
+
+작업용 저장소와 테스트용 클론을 동시에 띄우려면 **프로젝트 이름을 구분**해야
+합니다. compose는 프로젝트 이름을 디렉터리 이름에서 가져오는데, 클론한 폴더
+이름이 같으면 같은 프로젝트로 보고 **나중에 띄운 쪽이 앞의 컨테이너를 가져갑니다.**
+조용히 일어나서 알아채기 어렵습니다.
+
+```bash
+COMPOSE_PROJECT_NAME=week04-test docker compose up -d   # 또는 -p week04-test
+```
+
+포트도 겹치니 한쪽만 띄우거나 `docker-compose.dev.yml`에서 포트를 바꾸세요.
+
+### 배포물을 다시 만들 때 (멘토용)
+
+```bash
+docker compose stop chroma                              # 스냅샷은 정지 상태에서
+docker compose exec api uv run python scripts/pack_dist.py                  # chroma 인덱스만
+docker compose exec api uv run python scripts/pack_dist.py --with-vectors   # 벡터도 함께
+```
+
+`MANIFEST.json`(만든 날짜·chroma 버전·임베딩 모델·HNSW 설정·컬렉션 건수)이
+아카이브 안에 함께 들어가고, `data/dist/MANIFEST.json`에 각 아카이브의 SHA-256이
+남습니다. **받는 쪽이 "이게 내 환경에 맞나"를 물을 수 있어야 합니다.**
+
+포장 전에 `data/chroma/`가 깨끗한지 확인하세요. Chroma는 `delete_collection` 후에도
+세그먼트 디렉터리를 지우지 않아서, 지웠던 컬렉션이 아카이브에 딸려 갑니다
+(2.3GB짜리가 3.9GB가 된 적이 있습니다). 미심쩍으면 `data/chroma`를 비우고
+`docker compose run --rm index-load`로 다시 채우세요.
+
+### 컬렉션 두 개
+
+| 컬렉션 | 조립안 | 건수 | 쓰임 |
+| --- | --- | --- | --- |
+| `foods_name_cat` | 식품명 + 대/중/소분류 | 265,986 | 서비스가 쓰는 것 |
+| `foods_name` | 식품명만 | 262,205 | 비교용 |
+
+UI의 **임베딩 비교** 페이지에서 같은 질의를 둘에 던져 볼 수 있습니다.
+
+### 근사 검색이라는 것
+
+HNSW는 전수 비교가 아닙니다. 질의가 14ms로 끝나는 대신 **상위 결과를 놓칠 수
+있습니다.** 기본 파라미터로 적재했을 때 recall@10이 68%였고, 아래로 올려
+80%가 됐습니다.
+
+```python
+HNSW = {"space": "cosine", "max_neighbors": 32, "ef_construction": 200, "ef_search": 200}
+```
+
+`max_neighbors`는 **색인을 만들 때** 정해집니다. 나중에 질의 파라미터를 아무리
+올려도 못 고칩니다. 배포된 인덱스는 위 설정으로 만들어졌습니다.
+
 ## 저장소 구조
 
 ```
@@ -198,10 +338,14 @@ docker compose exec api uv run python scripts/make_sample.py \
 ├── data/
 │   ├── sample/            #   커밋된 층화 샘플 1,000건
 │   ├── raw/  clean/       #   원본·정제 산출물 (gitignore)
-│   └── pg/  chroma/       #   서비스 볼륨 (2·3회전이 채움)
+│   ├── pg/  chroma/       #   서비스 볼륨 (2·3회전이 채움)
+│   └── dist/              #   받아온 배포물을 두는 곳 (여기 두면 자동 복원)
 ├── reports/               # 정제는 코드가 아니라 리포트로 검증한다
 ├── scripts/               # download_file · download_api · make_sample
-├── docker-compose.yml     # api + ui (db는 2회전, chroma는 3회전이 추가)
+│                          #   embed_probe(A/B) · load_chroma(적재)
+│                          #   restore.sh(자동 복원) · pack_dist(배포물 포장)
+├── docker-compose.yml     # api + ui + chroma + index-restore + index-load
+│                          #   (db는 2회전, chroma는 3회전이 추가)
 └── PROMPT.md              # 회전별 지시 프롬프트 기록
 ```
 
