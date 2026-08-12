@@ -35,7 +35,11 @@ done
 for f in dist/foods.dump; do
   [ -f "$f" ] && cp "$f" "$STAGE/data/dist/" && echo "  + $f"
 done
-for f in reports/clean_report.txt reports/parse_report.txt reports/rejected.csv; do
+# 리포트는 **그 실행이 실제로 찍은 것만** 싣는다. embed_report.txt는 인덱스를
+# 직접 만든 사람의 산출물이라, 인덱스를 받아 쓰는 사람에게는 없는 게 맞다.
+# 대신 조립안 A/B 프로브 결과는 싣는다 — 6-1절 판단의 근거다
+for f in reports/clean_report.txt reports/parse_report.txt reports/rejected.csv \
+         reports/embed_probe.txt reports/embed_probe_full.txt; do
   [ -f "$f" ] && cp "$f" "$STAGE/reports/" && echo "  + $f"
 done
 
