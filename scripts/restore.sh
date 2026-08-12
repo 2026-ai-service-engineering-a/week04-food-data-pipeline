@@ -1,0 +1,51 @@
+#!/bin/sh
+# 배포된 산출물을 제자리에 놓는다. compose의 data-restore 서비스가 이걸 돈다.
+#
+# 학생 입장에서는 이게 전부다:
+#   1) 릴리즈에서 받은 파일을 data/dist/ 에 둔다
+#   2) docker compose up
+#
+# 멱등하다. 이미 있으면 아무 것도 하지 않는다. 배포물이 없어도 조용히 나간다 —
+# 정제를 직접 돌릴 사람에게는 없는 게 정상이고, "할 일이 없음"은 실패가 아니다.
+#
+# 회전이 서비스를 하나씩 더하듯 복원 대상도 하나씩 늘어난다.
+#   1회전(지금)  foods_parsed.parquet  → data/clean/
+#   2회전        foods.dump            → pg_restore (db 기동 후)
+#   3회전        chroma_foods.tar.gz   → data/chroma/
+set -e
+
+DIST=/data/dist
+CLEAN=/data/clean
+say() { echo "[restore] $*"; }
+
+mkdir -p "$CLEAN"
+placed=0
+
+# 정제 산출물 — 파일만 옮기면 끝난다. 압축도 DB도 필요 없다
+for name in foods_parsed.parquet foods_clean.parquet; do
+  if [ -f "$DIST/$name" ]; then
+    if [ -f "$CLEAN/$name" ]; then
+      say "$name 이미 있습니다 — 건너뜁니다"
+    else
+      cp "$DIST/$name" "$CLEAN/$name"
+      say "$name → data/clean/ ($(du -h "$CLEAN/$name" | cut -f1))"
+      placed=$((placed + 1))
+    fi
+  fi
+done
+
+# 파싱 캐시가 함께 오면 같이 놓는다. 있으면 LLM을 한 번도 안 부른다
+if [ -f "$DIST/.serving_cache.json" ] && [ ! -f "$CLEAN/.serving_cache.json" ]; then
+  cp "$DIST/.serving_cache.json" "$CLEAN/.serving_cache.json"
+  say "파싱 캐시도 함께 놓았습니다 — 재실행이 공짜입니다"
+  placed=$((placed + 1))
+fi
+
+if [ "$placed" -gt 0 ]; then
+  say "완료 — $placed개 배치"
+elif [ -f "$CLEAN/foods_parsed.parquet" ] || [ -f "$CLEAN/foods_clean.parquet" ]; then
+  say "정제 산출물이 이미 있습니다"
+else
+  say "배포물이 없습니다. 직접 만들거나, 릴리즈에서 받아 data/dist/ 에 두세요."
+  say "  직접: docker compose exec api uv run python -m pipeline.clean --input data/raw/<원본>.xlsx"
+fi

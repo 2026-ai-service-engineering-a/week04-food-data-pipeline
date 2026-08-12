@@ -18,6 +18,10 @@ services:
         required: false # v0.1은 키 없이도 뜬다 (빈 상태 안내)
     environment:
       TZ: Asia/Seoul
+    depends_on:
+      # 복원이 끝난 뒤에 뜬다. 반쯤 놓인 파일을 읽는 사고를 막는다
+      data-restore:
+        condition: service_completed_successfully
     volumes:
       # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
       # 컨테이너 안에서 쓰기가 일어나므로 read-only가 아니다.
@@ -26,6 +30,17 @@ services:
       - ./data:/app/data
       - ./reports:/app/reports
       - ./scripts:/app/scripts:ro
+
+  # 배포된 산출물을 제자리에 놓는 일회성 서비스.
+  #   릴리즈에서 받은 foods_parsed.parquet 를 data/dist/ 에 두고 compose up 하면
+  #   알아서 data/clean/ 으로 옮긴다. 이미 있으면 아무 것도 안 한다 (멱등).
+  #   배포물이 없어도 조용히 나간다 — 직접 정제할 사람에게는 없는 게 정상이다.
+  data-restore:
+    image: alpine:3.20
+    volumes:
+      - ./data:/data
+      - ./scripts:/scripts:ro
+    command: ["sh", "/scripts/restore.sh"]
 
   ui:
     build: ./ui
