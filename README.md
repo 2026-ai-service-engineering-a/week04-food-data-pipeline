@@ -50,6 +50,9 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 - **출처**: [식품안전나라 K-FIND 식품영양성분 DB 내려받기](https://various.foodsafetykorea.go.kr/nutrient/general/down/historyList.do)
 - **대상**: 가공식품 DB
 - **시연에 쓴 버전**: `20260728_가공식품DB_306307건.xlsx` — 187.42 MiB · **306,307행 × 166열**
+  - 시트명 `가공식품DB(306,307건)`
+  - SHA-256 `3861e9df7f9565288ed5c03768a30d0b9780b72639a3d645b337982e72a08c5b`
+  - 이 README의 모든 수치와 `data/sample/raw_sample.csv`는 **이 해시의 파일**에서 나왔습니다. 원본을 새로 받으면 숫자가 달라집니다
 - 3주차 음식 DB(11MB·2만 건)와 같은 페이지, 15배 몸집입니다
 
 성격 차이가 더러움의 원인입니다. 음식 DB는 **분석 기반**(연구 데이터)이고,
@@ -64,9 +67,21 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 # 제공 중인 버전 목록 + 다운로드 안내
 docker compose exec api uv run python scripts/download_file.py
 
-# 받은 원본 검증 (행수·필수 컬럼·SHA-256)
-docker compose exec api uv run python scripts/download_file.py --verify data/raw/<파일>.xlsx
+# 받은 원본 검증 — 파이프라인을 돌리기 전에 반드시
+docker compose exec api uv run python scripts/download_file.py \
+  --verify data/raw/20260728_가공식품DB_306307건.xlsx
 ```
+
+```plaintext
+[verify] 크기: 187.42 MiB
+[verify] 시트: 가공식품DB(306,307건)
+[verify] 행수: 306,307 · 열수: 166
+[verify] ✓ 필수 컬럼 6개 확인
+[verify] SHA-256: 3861e9df7f9565288ed5c03768a30d0b9780b72639a3d645b337982e72a08c5b
+```
+
+30초짜리 검증이 세 시간짜리 배치를 구합니다. 파이프라인을 다 돌리고 나서
+"컬럼 이름이 바뀌었네"를 알게 되는 것과, 시작 전에 아는 것은 다릅니다.
 
 내려받기 자체는 자동화하지 않습니다. K-FIND는 파일을 주기 전에 기관유형·소속·
 사용목적을 묻는 짧은 설문을 받고, 그 답은 사람이 해야 합니다. 인증이 아니라
@@ -95,7 +110,12 @@ Open-API 경로(`scripts/download_api.py`)는 대조군입니다. 인증키가 �
 일부러 심었다는 사실 자체가 교훈입니다. **희귀 결함은 찾아 나서야 보입니다.**
 결측률과 섭취참고량 분포 같은 "전체의 성질"은 계통 추출 층이 보존합니다.
 
-재생성: `uv run python scripts/make_sample.py --input data/raw/<원본>.xlsx`
+재생성 (위 해시의 원본에서 바이트 단위로 같은 파일이 나옵니다):
+
+```bash
+docker compose exec api uv run python scripts/make_sample.py \
+  --input data/raw/20260728_가공식품DB_306307건.xlsx
+```
 
 ### 원본에서 실제로 관찰된 것
 
