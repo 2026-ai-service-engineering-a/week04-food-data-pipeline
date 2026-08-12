@@ -2,12 +2,15 @@
 #   db(PostgreSQL) 서비스는 2회전이, chroma(벡터 DB) 서비스는 3회전이 더한다.
 #   인프라가 필요해지면 블록 하나를 더하는 것, 그것이 compose를 쓰는 이유다.
 #
+#   container_name을 쓰지 않는다. 이름을 고정하면 저장소 사본 두 개를 동시에
+#   띄울 수 없고, 나중에 띄운 쪽이 앞의 컨테이너를 가져가 버린다.
+#   compose가 프로젝트 이름으로 알아서 구분한다.
+#
 #   실행 모드: docker compose up --build
 #   개발 모드: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 services:
   api:
     build: ./api
-    container_name: food-pipeline-api
     ports:
       - "8000:8000"
     env_file:
@@ -26,7 +29,6 @@ services:
 
   ui:
     build: ./ui
-    container_name: food-pipeline-ui
     ports:
       - "8501:8501"
     environment:
