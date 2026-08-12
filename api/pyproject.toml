@@ -1,0 +1,33 @@
+[project]
+name = "week04-food-data-pipeline-api"
+version = "0.1.0"
+description = "가공식품 영양 탐색기 — 31만 건 정제 파이프라인과 검색·RAG API (4주차 라이브 시연)"
+requires-python = ">=3.12"
+dependencies = [
+    # 서비스
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.9",
+    "python-dotenv>=1.0",
+    "tzdata>=2024.1",
+    # 파이프라인 — 정제와 저장
+    "pandas>=2.2",
+    "pyarrow>=18.0",   # parquet
+    "openpyxl>=3.1",   # 187MB xlsx 읽기
+    # LLM — 2회전 잔여 파싱, 4회전 임베딩·RAG 답변
+    "litellm>=1.60",
+    "instructor>=1.7",
+    # 저장소 — 3회전 PostgreSQL, 4회전 Chroma
+    "psycopg[binary]>=3.2",
+    "chromadb>=0.5",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.27",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

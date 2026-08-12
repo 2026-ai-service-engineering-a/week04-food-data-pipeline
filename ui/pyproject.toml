@@ -1,0 +1,10 @@
+[project]
+name = "week04-food-data-pipeline-ui"
+version = "0.1.0"
+description = "가공식품 영양 탐색기 UI — 검색·의미 검색·질문 3탭 Streamlit (사전 구축)"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.40",
+    "requests>=2.32",
+    "pandas>=2.2",
+]

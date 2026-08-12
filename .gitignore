@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# 환경변수 — 키는 절대 커밋하지 않는다
+.env
+
+# Streamlit
+.streamlit/secrets.toml
+
+# ── 데이터: 원본은 레포 밖, 받는 방법은 레포 안 ────────────────────────
+# 187MB 원본을 커밋하는 선택지는 없다. scripts/download_file.py가 재현을 보장한다.
+data/raw/*
+!data/raw/.gitkeep
+
+# 파이프라인 출력 — 스크립트로 재생산되므로 커밋하지 않는다
+data/clean/*
+!data/clean/.gitkeep
+
+# 서비스 볼륨 — 3회전(db)·4회전(chroma)이 채운다
+data/pg/
+data/chroma/
+
+# 리포트도 실행 산출물이다 (릴리즈 자산으로 배포한다)
+reports/*
+!reports/.gitkeep
+
+# 단, 샘플 1,000건은 커밋한다 — 다운로드 없이 더러움을 관찰할 수 있어야 한다
+!data/sample/
+
+# 배포용 아카이브 — 수 GB짜리가 git add -A에 쓸려 들어가는 사고를 막는다
+*.tar.gz
+*.tgz
+*.zip
+data/dist/*
+!data/dist/.gitkeep
+data/MANIFEST.json
