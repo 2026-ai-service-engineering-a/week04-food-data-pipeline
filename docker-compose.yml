@@ -78,6 +78,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # 덤프는 아카이브 안에 들어 있고, 그걸 꺼내 놓는 건 data-restore다.
+      # 이 줄이 없으면 둘이 동시에 돌아 "덤프가 없습니다"를 보고 나가는
+      # 경주가 된다. 그리고 그 경주는 대체로 이기다가 가끔 진다
+      data-restore:
+        condition: service_completed_successfully
     command: ["sh", "/scripts/restore_db.sh"]
 
   ui:
