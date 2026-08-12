@@ -35,7 +35,11 @@ def pipeline_status() -> list[dict]:
     """
     status = []
     for key, label, path, made_by in PIPELINE_STAGES:
-        ready = any(path.iterdir()) if path.is_dir() else path.exists()
+        if path.is_dir():
+            # .gitkeep은 "빈 디렉터리를 커밋하기 위한 표식"이지 데이터가 아니다
+            ready = any(p for p in path.iterdir() if not p.name.startswith("."))
+        else:
+            ready = path.exists()
         status.append({"stage": key, "label": label, "ready": ready, "made_by": made_by})
     return status
 
