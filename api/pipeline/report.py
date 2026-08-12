@@ -59,7 +59,9 @@ def write_parse_report(path: Path, stats: dict) -> None:
         " 규정 표준값이라 사실상 통제 어휘입니다.",
         f"[rule ] 1차(숫자+g)      {u['rule_g']:>3}개 고유값 → {r['rule_g']:>7,}행",
         f"[rule ] 2차(단위 병기)    {u['rule_unit']:>3}개 고유값 → {r['rule_unit']:>7,}행",
-        f"[llm  ] {u['llm']:>3}개 고유값 호출 → {r['llm']:>7,}행",
+        f"[llm  ] {u['llm']:>3}개 고유값 → {r['llm']:>7,}행"
+        + (f" · 이번 실행 호출 {stats['calls']}건" if stats["calls"]
+           else " · 이번 실행 호출 0건 (전부 캐시)"),
         f"        입력 {stats['tokens_in']:,} tok · 출력 {stats['tokens_out']:,} tok"
         f" · ${stats['cost_usd']:.4f}",
         f"[none ] {u['none']:>3}개 고유값 + 빈 값 → serving_g = NULL"
@@ -67,10 +69,14 @@ def write_parse_report(path: Path, stats: dict) -> None:
         f"[done ] rule {r['rule_g'] + r['rule_unit']:,} · llm {r['llm']:,}"
         f" · none {r['none']:,} → {stats['output']}",
         "",
-        f"[cost ] 실제 지출          ${stats['cost_usd']:.4f}"
-        f"  (고유값 {u['llm']}건 호출)",
+        f"[cost ] 이번 실행          ${stats['cost_usd']:.4f}"
+        + (f"  (고유값 {stats['calls']}건 호출)" if stats["calls"]
+           else "  (캐시 적중 — 두 번째부터는 공짜다)"),
         f"[cost ] 행 단위였다면      ${stats['naive_cost_usd']:.2f}"
         f"   ({stats['naive_calls']:,}건 호출 추정)",
-        f"        └ {stats['saving_ratio']:,.0f}배. nunique() 한 줄의 값입니다.",
+    ]
+    if stats["saving_ratio"]:
+        lines.append(f"        └ {stats['saving_ratio']:,.0f}배. nunique() 한 줄의 값입니다.")
+    lines += [
     ]
     _write(path, lines)

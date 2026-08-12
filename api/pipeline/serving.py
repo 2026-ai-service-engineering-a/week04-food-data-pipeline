@@ -126,9 +126,8 @@ def main() -> int:
     uniq = sorted(x for x in series.dropna().unique())
     n_uniq, n_rows = len(uniq), len(df)
 
-    print(f"[count] {COL} 고유값: {n_uniq:,}개 ({n_rows:,}행 중)", flush=True)
-
     if args.show_residual:
+        print(f"[count] {COL} 고유값: {n_uniq:,}개 ({n_rows:,}행 중)", flush=True)
         rows = series.value_counts()
         residual = [t for t in uniq if parse_rule(t) is None]
         print(f"[residual] 규칙이 못 푼 고유값 {len(residual)}개 — 전부 출력합니다")
@@ -191,6 +190,7 @@ def main() -> int:
         "rows": {"rule_g": by_method.get("rule_g", 0), "rule_unit": by_method.get("rule_unit", 0),
                  "llm": by_method.get("llm", 0), "none": by_method.get("none", 0)},
         "tokens_in": usage["in"], "tokens_out": usage["out"], "cost_usd": cost,
+        "calls": usage["calls"],
         "naive_calls": max(naive_calls, 0),
         "naive_cost_usd": max(naive_calls, 0) * COST_PER_CALL_USD,
         "saving_ratio": (max(naive_calls, 0) * COST_PER_CALL_USD / cost) if cost else 0,
