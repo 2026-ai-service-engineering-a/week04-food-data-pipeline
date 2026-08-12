@@ -38,3 +38,6 @@ reports/*
 data/dist/*
 !data/dist/.gitkeep
 data/MANIFEST.json
+
+# 릴리즈 자산을 마는 자리
+dist/
