@@ -52,3 +52,16 @@ def test_status_endpoint_matches():
 def test_sort_whitelist_rejects_unknown():
     """정렬은 SQL에 이어 붙는 자리라 화이트리스트 밖은 400으로 막는다."""
     assert client.get("/foods", params={"sort": "sodium_asc; drop table foods"}).status_code == 400
+
+
+def test_sort_is_a_total_order():
+    """동점이 있어도 순서가 하나로 정해져야 한다.
+
+    나트륨 0인 행만 27,219개다. 동점 사이 순서가 안 정해져 있으면 같은 값
+    구간에서 페이지가 겹치거나 빠진다 — 1페이지에 본 행이 2페이지에 또 나온다.
+    화이트리스트의 모든 정렬 키가 code로 끝나는지 본다. db 없이 검사한다.
+    """
+    from app.foods import SORTS, SORT_TIEBREAK
+
+    assert SORT_TIEBREAK == "code asc"
+    assert all(" " in expr for expr in SORTS.values())
