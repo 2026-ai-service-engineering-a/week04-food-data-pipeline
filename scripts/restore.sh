@@ -11,11 +11,12 @@
 # 회전이 서비스를 하나씩 더하듯 복원 대상도 하나씩 늘어난다.
 #   1회전(지금)  foods_parsed.parquet  → data/clean/
 #   2회전        foods.dump            → data/dist/ (db-restore가 이어받는다)
-#   3회전        chroma_foods.tar.gz   → data/chroma/
+#   3회전        chroma_foods.tar.gz   → data/chroma/ (chroma가 뜨기 전에)
 set -e
 
 DIST=/data/dist
 CLEAN=/data/clean
+CHROMA=/data/chroma
 say() { echo "[restore] $*"; }
 
 mkdir -p "$CLEAN"
@@ -78,6 +79,22 @@ for src in "$DIST/.serving_cache.json" "$DIST/serving_cache.json"; do
     placed=$((placed + 1))
   fi
 done
+
+# 벡터 인덱스 — 1.6GB라 릴리즈 자산 한도를 넘어 Google Drive로 온다.
+#   그래서 이것만 아카이브 이름이 다르고, 여기서 따로 받는다.
+#   푸는 데 몇 분 걸린다. chroma 서비스가 이 단계를 기다리는 이유다.
+if [ -f "$DIST/chroma_foods.tar.gz" ]; then
+  if [ -f "$CHROMA/chroma.sqlite3" ]; then
+    say "벡터 인덱스가 이미 있습니다 — 건너뜁니다"
+  else
+    say "chroma_foods.tar.gz 를 풉니다 (1.6GB — 몇 분 걸립니다)"
+    mkdir -p "$CHROMA"
+    # 아카이브 안이 chroma/… 라 /data 기준으로 풀면 data/chroma/ 가 된다
+    tar xzf "$DIST/chroma_foods.tar.gz" -C /data chroma
+    say "완료 — data/chroma/ 에 놓았습니다"
+    placed=$((placed + 1))
+  fi
+fi
 
 if [ "$placed" -gt 0 ]; then
   say "완료 — $placed개 배치"
