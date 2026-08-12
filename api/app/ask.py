@@ -12,6 +12,7 @@ LLM이 이번 주에 런타임으로 등장하는 유일한 자리이기도 하�
 이 시스템의 일**이다.
 """
 
+import logging
 import os
 
 from fastapi import APIRouter
@@ -23,6 +24,12 @@ router = APIRouter(tags=["ask"])
 
 MODEL = os.environ.get("PARSER_MODEL", "openai/gpt-5-mini")
 TOP_K = int(os.environ.get("ASK_TOP_K", "5"))
+
+# LOG_LEVEL=debug면 LLM이 실제로 받은 것을 전부 찍는다. RAG에서 가장 자주
+# 나오는 질문이 "왜 이렇게 답했지"이고, 답은 늘 컨텍스트에 있다.
+# 컨텍스트를 볼 수 없는 RAG는 고칠 수도 없다
+log = logging.getLogger("ask")
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "info").upper())
 
 SYSTEM = """당신은 가공식품 영양 정보를 안내합니다.
 
@@ -69,6 +76,10 @@ def ask(req: AskRequest) -> dict:
     import litellm
 
     context = build_context(items)
+    log.debug("SEMANTIC top-%d — 질의 임베딩 1회", len(items))
+    for it in items:
+        log.debug("  %s  %s  score %.4f", it["code"], it["name"], it["score"])
+    log.debug("RAG CONTEXT (%d건):\n%s", len(items), context)
     res = litellm.completion(
         model=MODEL,
         messages=[
@@ -77,6 +88,9 @@ def ask(req: AskRequest) -> dict:
         ],
     )
     usage = res.usage
+    log.debug("ANSWER (%s) 입력 %d tok · 출력 %d tok\n%s",
+              MODEL, usage.prompt_tokens, usage.completion_tokens,
+              res.choices[0].message.content)
     # 키 이름은 **UI가 정한다.** ui/app.py는 v0.1에 고정돼 있고 input_tok ·
     # output_tok · cost_usd를 읽는다. 헤드리스 분리는 "UI를 안 바꾼다"가 아니라
     # "계약을 지킨다"는 뜻이다. 이름이 어긋나면 화면에 0이 뜨고, 그건 버그가
