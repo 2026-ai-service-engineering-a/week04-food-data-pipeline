@@ -1,0 +1,28 @@
+# PR 안전망 — PR을 올리면 pytest가 자동으로 돕니다.
+# CI에는 LLM 키도, 187MB 원본도, PostgreSQL도 없습니다.
+# 그 조건에서 도는 것만 둡니다 — 순수 함수(문자 정리·규칙 파서)와 빈 상태 API.
+# "테스트가 도는 조건"을 좁게 잡는 것도 설계입니다.
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: 의존성 설치
+        run: uv sync --frozen
+
+      - name: 테스트 실행
+        run: uv run pytest -q
