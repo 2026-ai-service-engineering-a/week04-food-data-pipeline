@@ -18,9 +18,12 @@ services:
         required: false # v0.1은 키 없이도 뜬다 (빈 상태 안내)
     environment:
       TZ: Asia/Seoul
+      DATABASE_URL: postgresql://app:app@db:5432/food
     depends_on:
       # 복원이 끝난 뒤에 뜬다. 반쯤 놓인 파일을 읽는 사고를 막는다
       data-restore:
+        condition: service_completed_successfully
+      db-restore:
         condition: service_completed_successfully
     volumes:
       # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
@@ -42,6 +45,45 @@ services:
       - ./reports:/reports
       - ./scripts:/scripts:ro
     command: ["sh", "/scripts/restore.sh"]
+
+  # 2회전이 더한 서비스. 2주차 PostgreSQL의 재등장이고, compose에서는
+  # 이렇게 블록 하나를 더하는 일이다. 3회전의 chroma가 같은 패턴을 반복한다.
+  db:
+    image: postgres:17-alpine
+    environment:
+      TZ: Asia/Seoul
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: food
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+    healthcheck:
+      # api가 "떴다"가 아니라 "받을 준비가 됐다"를 기다리게 한다.
+      # depends_on만으로는 컨테이너 기동 순서까지만 보장된다
+      test: ["CMD-SHELL", "pg_isready -U app -d food"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # 배포된 pg 덤프를 복원하는 일회성 서비스.
+  #   parquet과 달리 덤프는 파일을 옮겨서 끝나지 않는다. db가 받을 준비가 된
+  #   뒤에 돌아야 하고, api는 이게 끝나기를 기다려야 한다.
+  db-restore:
+    image: postgres:17-alpine
+    environment:
+      DATABASE_URL: postgresql://app:app@db:5432/food
+    volumes:
+      - ./data:/data
+      - ./scripts:/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      # 덤프는 아카이브 안에 들어 있고, 그걸 꺼내 놓는 건 data-restore다.
+      # 이 줄이 없으면 둘이 동시에 돌아 "덤프가 없습니다"를 보고 나가는
+      # 경주가 된다. 그리고 그 경주는 대체로 이기다가 가끔 진다
+      data-restore:
+        condition: service_completed_successfully
+    command: ["sh", "/scripts/restore_db.sh"]
 
   ui:
     build: ./ui

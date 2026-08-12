@@ -4,44 +4,18 @@
 "데이터가 없다"고 정직하게 말하는 것이 일이다. 회전이 돌면서 채워진다.
 
   1회전 feature/clean       정제 + 섭취참고량 파싱 (pipeline/clean.py, serving.py)
-  2회전 feature/pg-service  PostgreSQL 적재 + GET /foods, GET /foods/{code}
+  2회전 feature/pg-service  PostgreSQL 적재 + GET /foods, GET /foods/{code}  ← 지금 여기
   3회전 feature/rag-search  Chroma 인덱스 + GET /foods/semantic, POST /ask
 
 헤드리스 구조: 이 API는 UI를 모른다. curl·Swagger(/docs)로 불러도 똑같이 동작한다.
 """
 
-import os
-from pathlib import Path
-
 from fastapi import FastAPI
 
+from app.foods import router as foods_router
+from app.status import pipeline_status
+
 app = FastAPI(title="가공식품 영양 탐색기 API", version="0.1.0")
-
-DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
-
-# 파이프라인이 이 순서로 만들어 가는 산출물. v0.1에서는 셋 다 없다.
-PIPELINE_STAGES = [
-    ("raw", "원본 엑셀", DATA_DIR / "raw", "scripts/download_file.py"),
-    ("clean", "정제 데이터셋", DATA_DIR / "clean" / "foods_clean.parquet", "1회전"),
-    ("parsed", "섭취참고량 파싱", DATA_DIR / "clean" / "foods_parsed.parquet", "1회전"),
-]
-
-
-def pipeline_status() -> list[dict]:
-    """어느 단계까지 와 있는지를 파일 존재로 판단한다.
-
-    DB에 물어보지 않는 이유: v0.1에는 db 서비스 자체가 없다 (2회전이 추가한다).
-    """
-    status = []
-    for key, label, path, made_by in PIPELINE_STAGES:
-        if path.is_dir():
-            # .gitkeep은 "빈 디렉터리를 커밋하기 위한 표식"이지 데이터가 아니다
-            ready = any(p for p in path.iterdir() if not p.name.startswith("."))
-        else:
-            ready = path.exists()
-        status.append({"stage": key, "label": label, "ready": ready, "made_by": made_by})
-    return status
-
 
 @app.get("/health")
 def health() -> dict:
@@ -49,12 +23,12 @@ def health() -> dict:
     return {"status": "ok", "version": app.version}
 
 
-@app.get("/foods")
-def list_foods() -> dict:
-    """v0.1 빈 상태 — 2회전에서 PostgreSQL 검색으로 교체된다."""
-    return {
-        "total": 0,
-        "items": [],
-        "message": "데이터가 아직 없습니다. README의 적재 절차를 따르세요",
-        "pipeline": pipeline_status(),
-    }
+@app.get("/status")
+def status() -> dict:
+    """파이프라인이 어디까지 왔나. /foods 응답에도 같은 값이 실린다."""
+    return {"pipeline": pipeline_status()}
+
+
+# 2회전이 /foods를 PostgreSQL 검색으로 교체한다. db가 없거나 표가 비었으면
+# v0.1과 같은 모양(total 0 · message · pipeline)으로 답하므로 UI는 안 바뀐다
+app.include_router(foods_router)
