@@ -103,10 +103,23 @@ services:
       IS_PERSISTENT: "TRUE"
       ANONYMIZED_TELEMETRY: "FALSE"
     healthcheck:
-      # db와 같은 이유. "떴다"와 "받을 준비가 됐다"는 다르다
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/v2/heartbeat || exit 1"]
+      # db와 같은 이유. "떴다"와 "받을 준비가 됐다"는 다르다.
+      #
+      # 이 이미지에는 curl도 wget도 python도 없다. 헬스체크는 **그 이미지 안에서**
+      # 도는 명령이라, 호스트에 있는 도구를 쓸 수 있다고 가정하면 컨테이너가
+      # 영원히 starting에 머문다. bash의 /dev/tcp면 외부 도구가 필요 없다
+      # CMD-SHELL이 아니라 CMD + bash다. CMD-SHELL은 /bin/sh(dash)로 도는데
+      # /dev/tcp는 bash 기능이라 dash에서는 "Directory nonexistent"가 난다
+      test:
+        - CMD
+        - bash
+        - -c
+        - >-
+          exec 3<>/dev/tcp/localhost/8000 &&
+          printf 'GET /api/v2/heartbeat HTTP/1.0\r\n\r\n' >&3 &&
+          head -1 <&3 | grep -q 200
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 30
     depends_on:
       # 1.6GB 아카이브를 푸는 동안 chroma가 열면 반쯤 풀린 디렉터리를 본다
