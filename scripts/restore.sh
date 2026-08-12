@@ -34,12 +34,18 @@ for name in foods_parsed.parquet foods_clean.parquet; do
   fi
 done
 
-# 파싱 캐시가 함께 오면 같이 놓는다. 있으면 LLM을 한 번도 안 부른다
-if [ -f "$DIST/.serving_cache.json" ] && [ ! -f "$CLEAN/.serving_cache.json" ]; then
-  cp "$DIST/.serving_cache.json" "$CLEAN/.serving_cache.json"
-  say "파싱 캐시도 함께 놓았습니다 — 재실행이 공짜입니다"
-  placed=$((placed + 1))
-fi
+# 파싱 캐시가 함께 오면 같이 놓는다. 있으면 LLM을 한 번도 안 부른다.
+#   이름을 둘 다 받는다. GitHub 릴리즈는 점으로 시작하는 파일명을 안 받아서
+#   serving_cache.json으로 올라가고, 받는 쪽에서 이름을 바꾸게 하면 그건
+#   "data/dist에 넣으면 된다"는 계약을 깨는 것이다. 받는 쪽이 아니라
+#   여기가 흡수한다.
+for src in "$DIST/.serving_cache.json" "$DIST/serving_cache.json"; do
+  if [ -f "$src" ] && [ ! -f "$CLEAN/.serving_cache.json" ]; then
+    cp "$src" "$CLEAN/.serving_cache.json"
+    say "파싱 캐시도 함께 놓았습니다 — 재실행이 공짜입니다"
+    placed=$((placed + 1))
+  fi
+done
 
 if [ "$placed" -gt 0 ]; then
   say "완료 — $placed개 배치"
