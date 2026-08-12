@@ -16,9 +16,14 @@
 
 **같은 문장은 한 번만 임베딩한다.** 30만 행을 조립하면 고유 문장은 26.6만 개다
 (13.2%가 중복). 이름과 분류가 완전히 같은 두 제품은 벡터도 같을 수밖에 없으니,
-같은 것을 두 번 살 이유가 없다. id는 그래서 식품코드가 아니라 문장 번호(C:n)이고,
+같은 것을 두 번 살 이유가 없다. id는 그래서 식품코드가 아니라 **문장의 해시**이고,
 식품코드는 메타데이터로 따라간다. 검색이 돌려준 코드로 원본을 조회하는 구조는
 그대로다 — **벡터 DB는 색인이고 원본은 PostgreSQL 한 곳**이다.
+
+id를 `C:0`, `C:1`처럼 **순번**으로 매기다 한 번 데였다. `--limit 1000`으로 맛을
+보면 그 1,000건이 `C:0`부터 시작하는데, 전량 인덱스의 `C:0`은 전혀 다른 문장이다.
+같은 id에 다른 벡터가 덮이고, 검색은 조용히 엉뚱한 것을 돌려준다. **id는 내용에서
+나와야 한다.** 그래야 어떤 부분집합으로 만들어도 같은 문장이 같은 id를 받는다.
 
 사용법:
   docker compose run --rm index-load
@@ -26,6 +31,7 @@
 """
 
 import argparse
+import hashlib
 import os
 import re
 import sys
@@ -125,8 +131,13 @@ def dedupe(rows: list[dict]) -> list[dict]:
     for row in rows:
         text = assemble(row)
         if text not in seen:
-            seen[text] = {**row, "text": text}
-    return [{**v, "id": f"C:{i}"} for i, (_, v) in enumerate(sorted(seen.items()))]
+            seen[text] = {**row, "text": text, "id": doc_id(text)}
+    return list(seen.values())
+
+
+def doc_id(text: str) -> str:
+    """id는 내용에서 나온다. 순번으로 매기면 부분집합끼리 충돌한다."""
+    return hashlib.sha1(text.encode("utf-8")).hexdigest()[:16]
 
 
 def fetch_rows(limit: int | None) -> list[dict]:
@@ -159,6 +170,23 @@ def get_collection():
     )
 
 
+def reset_collection() -> None:
+    import chromadb
+
+    client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
+    try:
+        client.delete_collection(COLLECTION)
+    except Exception:  # noqa: BLE001 — 없으면 지울 것도 없다
+        pass
+
+
+def is_distributed(collection) -> bool:
+    """배포 인덱스인가. 순번 id가 하나라도 보이면 그렇다."""
+    if collection.count() == 0:
+        return False
+    return any(i.startswith("C:") for i in collection.get(limit=5, include=[])["ids"])
+
+
 def already_indexed(collection, codes: list[str]) -> set[str]:
     """이미 넣은 것은 다시 임베딩하지 않는다. 재개의 근거가 이 한 함수다."""
     done: set[str] = set()
@@ -173,7 +201,13 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=None, help="앞의 N행만 (맛보기)")
     ap.add_argument("--batch", type=int, default=BATCH)
     ap.add_argument("--report", default="reports/embed_report.txt")
+    ap.add_argument("--reset", action="store_true",
+                    help="컬렉션을 비우고 처음부터 (배포 인덱스를 덮어쓴다)")
     args = ap.parse_args()
+
+    if args.reset:
+        reset_collection()
+        print(f"[reset] {COLLECTION} 컬렉션을 비웠습니다")
 
     t0 = time.time()
     rows = fetch_rows(args.limit)
@@ -184,6 +218,15 @@ def main() -> int:
 
     docs = dedupe(rows)
     collection = get_collection()
+
+    # 배포 인덱스는 순번 id(C:n)로 만들어져 있다. 그 위에 해시 id를 얹으면
+    # 같은 문장이 두 벌 들어가고, 검색 결과에 중복이 뜬다. 섞지 말고 갈라 준다
+    if is_distributed(collection) and not args.reset:
+        # "할 일이 없음"은 실패가 아니다. 종료 코드 0으로 나간다
+        print(f"[skip ] 배포 인덱스가 이미 들어 있습니다 ({collection.count():,}건).")
+        print("        직접 만들어 보려면 컬렉션을 비우고 다시 부르세요:")
+        print("          docker compose run --rm index-load --reset")
+        return 0
     done = already_indexed(collection, [d["id"] for d in docs])
     todo = [d for d in docs if d["id"] not in done]
 
