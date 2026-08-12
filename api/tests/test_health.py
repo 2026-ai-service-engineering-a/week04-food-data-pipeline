@@ -107,3 +107,38 @@ def test_retry_delay_is_read_from_the_response():
 
     assert sleep_for_retry(Exception("... 'retryDelay': '27s' ...")) == 27.0
     assert sleep_for_retry(Exception("연결 실패")) == 10.0
+
+
+def test_pipeline_progress_is_monotone(tmp_path, monkeypatch):
+    """뒷단계가 있는데 앞단계가 비면 "덜 됐다"가 아니라 "남이 대신했다"이다.
+
+    배포본으로 시작한 사람은 187MB 원본을 받을 일이 없다. 파일 존재만 보면
+    원본 칸이 영원히 비어 다 됐는데 4/5가 뜬다.
+    """
+    from app import status
+
+    (tmp_path / "raw").mkdir()
+    (tmp_path / "clean").mkdir()
+    (tmp_path / "clean" / "foods_clean.parquet").touch()
+    (tmp_path / "clean" / "foods_parsed.parquet").touch()
+    monkeypatch.setattr(status, "PIPELINE_STAGES", [
+        ("raw", "원본 엑셀", tmp_path / "raw", "scripts/download_file.py"),
+        ("clean", "정제 데이터셋", tmp_path / "clean" / "foods_clean.parquet", "1회전"),
+        ("parsed", "섭취참고량 파싱", tmp_path / "clean" / "foods_parsed.parquet", "1회전"),
+    ])
+    stages = status.pipeline_status()
+    assert [s["ready"] for s in stages] == [True, True, True]
+    assert "배포본" in stages[0]["made_by"]
+
+
+def test_pipeline_progress_stays_empty_at_v01(tmp_path, monkeypatch):
+    """아무것도 없으면 셋 다 빈 동그라미다. v0.1의 화면이 이것이다."""
+    from app import status
+
+    (tmp_path / "raw").mkdir()
+    monkeypatch.setattr(status, "PIPELINE_STAGES", [
+        ("raw", "원본 엑셀", tmp_path / "raw", "scripts/download_file.py"),
+        ("clean", "정제 데이터셋", tmp_path / "clean" / "foods_clean.parquet", "1회전"),
+        ("parsed", "섭취참고량 파싱", tmp_path / "clean" / "foods_parsed.parquet", "1회전"),
+    ])
+    assert [s["ready"] for s in status.pipeline_status()] == [False, False, False]
