@@ -17,6 +17,15 @@ from fastapi import FastAPI
 
 app = FastAPI(title="가공식품 영양 탐색기 API", version="0.1.0")
 
+# 임베딩 조립안 비교 도구. 시연 흐름(v0.1 → v1.0)의 일부가 아니라 실험 도구라,
+# 프로브 벡터가 없으면 라우터 자체를 안 붙인다 (없는 기능을 있는 척하지 않는다)
+try:
+    from app.probe import router as probe_router
+
+    app.include_router(probe_router)
+except ImportError:  # numpy·pandas가 없는 최소 환경 대비
+    pass
+
 DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 
 # 파이프라인이 이 순서로 만들어 가는 산출물. v0.1에서는 셋 다 없다.
