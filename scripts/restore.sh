@@ -19,9 +19,11 @@ show_manifest() {
   sed -n 's/.*"created": "\([^"]*\)".*/  만든 날짜: \1/p;
           s/.*"chroma_image": "\([^"]*\)".*/  chroma 버전: \1/p;
           s/.*"embedding_model": "\([^"]*\)".*/  임베딩 모델: \1/p' /data/MANIFEST.json | head -3
+  # compose가 chroma 이미지를 고정하므로 보통은 어긋날 일이 없다.
+  # 이미지를 올렸는데 옛 아카이브를 쓰는 경우만 여기 걸린다
   if ! grep -q "\"chroma_image\": \"${CHROMA_IMAGE}\"" /data/MANIFEST.json 2>/dev/null; then
-    say "경고: 아카이브가 만들어진 chroma 버전과 이 compose의 버전이 다를 수 있습니다."
-    say "      색인이 안 열리면 probe_vectors.tar.gz 로 다시 받아 적재하세요."
+    say "경고: 아카이브를 만든 chroma 버전이 compose의 버전과 다릅니다."
+    say "      색인이 안 열리면 probe_vectors.tar.gz 를 받아 다시 적재하세요."
   fi
 }
 
@@ -46,6 +48,5 @@ elif [ -f /data/clean/.probe_C.f32 ]; then
 
 else
   say "배포물이 없습니다. 의미 검색 없이 뜹니다."
-  say "  받아서 쓰기: 릴리즈/Drive의 chroma_foods.tar.gz 를 data/dist/ 에 두고 다시 compose up"
-  say "  직접 만들기: docker compose run --rm index-load (벡터 파일이 있을 때)"
+  say "  chroma_foods.tar.gz 를 data/dist/ 에 두고 다시 compose up 하면 됩니다"
 fi

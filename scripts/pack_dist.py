@@ -4,9 +4,12 @@
 받는 쪽에서 "이게 내 chroma 버전에 맞나?"를 물을 수 있어야 하므로 매니페스트를
 아카이브 안에 함께 넣는다.
 
-아카이브 두 가지:
-  chroma_foods.tar.gz   컬렉션이 만들어진 상태 그대로. 풀면 끝 (빠름, 버전 결합 있음)
-  probe_vectors.tar.gz  float32 벡터 원본. 적재가 필요 (느림, 버전 결합 없음)
+기본 산출물은 `chroma_foods.tar.gz` 하나다. chroma 이미지가 compose에 고정돼
+있어 버전이 어긋날 경로가 없으므로, 학생에게는 이것만 주면 된다.
+
+`--with-vectors`를 주면 `probe_vectors.tar.gz`(float32 원본)도 만든다. HNSW
+설정을 바꿔 다시 색인하거나 chroma 이미지를 올릴 때만 필요하고, 그때 재임베딩
+($2.29·세 시간)을 면하게 해준다.
 
 두 아카이브 모두 압축을 풀면 data/ 아래에 정확히 들어가도록 경로를 맞춰 둔다.
   tar xzf chroma_foods.tar.gz -C data/   →  data/chroma/... + data/MANIFEST.json
@@ -100,6 +103,13 @@ def pack(name: str, kind: str, members: list[tuple[Path, str]]) -> Path | None:
 
 
 def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="배포 아카이브 포장")
+    ap.add_argument("--with-vectors", action="store_true",
+                    help="float32 벡터 원본도 함께 만든다 (재색인·버전 업 대비)")
+    args = ap.parse_args()
+
     if not CHROMA_DIR.exists() and not (CLEAN / ".probe_C.f32").exists():
         print("포장할 것이 없습니다. 인덱스를 먼저 만드세요.", file=sys.stderr)
         return 1
@@ -117,9 +127,10 @@ def main() -> int:
             return 1
         made.append(pack("chroma_foods.tar.gz", "chroma-index", [(CHROMA_DIR, "chroma")]))
 
-    vectors = [(CLEAN / f, f"clean/{f}") for f in VECTOR_FILES if (CLEAN / f).exists()]
-    if vectors:
-        made.append(pack("probe_vectors.tar.gz", "raw-vectors", vectors))
+    if args.with_vectors:
+        vectors = [(CLEAN / f, f"clean/{f}") for f in VECTOR_FILES if (CLEAN / f).exists()]
+        if vectors:
+            made.append(pack("probe_vectors.tar.gz", "raw-vectors", vectors))
 
     made = [m for m in made if m]
     index = {

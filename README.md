@@ -223,18 +223,18 @@ index-restore  →  chroma  →  index-load  →  api  →  ui
 - **배포물이 없어도 뜹니다.** 받는 법을 출력하고 의미 검색만 빠집니다.
 - 순서는 `depends_on: service_completed_successfully`가 강제합니다. 반쯤 풀린 디렉터리를 열거나 반쯤 찬 컬렉션으로 검색하는 사고가 구조적으로 막힙니다.
 
-### 아카이브 두 가지
+### 받을 것은 하나입니다
 
-| | 받는 용량 | 첫 기동 | 결합 |
-| --- | --- | --- | --- |
-| `chroma_foods.tar.gz` | 1.6GB | 압축 풀기만 | chroma 버전에 묶임 |
-| `probe_vectors.tar.gz` | 1.4GB | + 적재 8분 | 없음 (그냥 float32 배열) |
+`chroma_foods.tar.gz` (1.6GB) 하나면 됩니다. **임베딩 API를 부르지 않고,
+벡터 파일도 필요 없습니다.** 컬렉션이 만들어진 상태 그대로라 압축만 풀면
+바로 검색이 됩니다.
 
-둘 다 `data/dist/`에 두면 됩니다. `restore.sh`가 있는 쪽을 골라 씁니다.
-**어느 쪽도 임베딩 API를 부르지 않습니다.**
+버전이 어긋날 걱정도 없습니다. chroma는 이 저장소의 compose가 띄우고
+이미지가 `chromadb/chroma:1.5.9`로 고정돼 있어서, **학생이 다른 버전을 쓸
+경로 자체가 없습니다.**
 
-chroma 버전이 안 맞아 색인이 안 열리면 `probe_vectors.tar.gz` 쪽으로 가세요.
-그쪽은 float32 배열이라 어떤 버전에도 적재됩니다.
+호스트 종류도 상관없습니다. arm64(Apple Silicon)에서 만든 색인을 x86_64에서
+열어 같은 결과가 나오는 것을 확인했습니다.
 
 ### `data/chroma/` 안의 UUID 폴더는 무엇인가
 
@@ -255,11 +255,24 @@ select id, collection from segments;
 호스트 종류는 상관없습니다. arm64(Apple Silicon)에서 만든 색인을 x86_64에서
 열어 같은 결과가 나오는 것을 확인했습니다.
 
-### 배포물을 다시 만들 때
+### 색인을 직접 다시 만들고 싶다면 (선택)
+
+HNSW 설정을 바꿔 recall이 어떻게 달라지는지 보고 싶다면 벡터가 필요합니다.
+그때만 `probe_vectors.tar.gz`(1.4GB)를 받으세요. 역시 `data/dist/`에 두면
+`compose up`이 풀고 적재까지 합니다 (약 8분). 이쪽도 임베딩 API는 안 부릅니다.
+
+```bash
+mv ~/Downloads/probe_vectors.tar.gz data/dist/
+rm -rf data/chroma/*                    # 기존 색인을 비우고
+HNSW_M=64 docker compose run --rm index-load   # 다른 설정으로 다시
+```
+
+### 배포물을 다시 만들 때 (멘토용)
 
 ```bash
 docker compose stop chroma                              # 스냅샷은 정지 상태에서
-docker compose exec api uv run python scripts/pack_dist.py
+docker compose exec api uv run python scripts/pack_dist.py                  # chroma 인덱스만
+docker compose exec api uv run python scripts/pack_dist.py --with-vectors   # 벡터도 함께
 ```
 
 `MANIFEST.json`(만든 날짜·chroma 버전·임베딩 모델·HNSW 설정·컬렉션 건수)이
