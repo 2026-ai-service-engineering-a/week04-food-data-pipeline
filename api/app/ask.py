@@ -77,6 +77,10 @@ def ask(req: AskRequest) -> dict:
         ],
     )
     usage = res.usage
+    # 키 이름은 **UI가 정한다.** ui/app.py는 v0.1에 고정돼 있고 input_tok ·
+    # output_tok · cost_usd를 읽는다. 헤드리스 분리는 "UI를 안 바꾼다"가 아니라
+    # "계약을 지킨다"는 뜻이다. 이름이 어긋나면 화면에 0이 뜨고, 그건 버그가
+    # 아니라 계약 위반이라 조용히 지나간다
     return {
         "q": req.q,
         "answer": res.choices[0].message.content,
@@ -84,7 +88,18 @@ def ask(req: AskRequest) -> dict:
         # 어디서 어긋났는지 추적할 수 있다 — 검색인지, 원본인지, LLM인지
         "sources": [{"code": it["code"], "name": it["name"],
                      "score": it["score"]} for it in items],
-        "usage": {"input_tokens": usage.prompt_tokens,
-                  "output_tokens": usage.completion_tokens,
+        "usage": {"input_tok": usage.prompt_tokens,
+                  "output_tok": usage.completion_tokens,
+                  "cost_usd": cost_of(res),
                   "model": MODEL},
     }
+
+
+def cost_of(res) -> float:
+    """LiteLLM이 모델별 요금표를 들고 있다. 우리가 단가를 박지 않는다."""
+    try:
+        import litellm
+
+        return float(litellm.completion_cost(completion_response=res))
+    except Exception:  # noqa: BLE001 — 요금표에 없는 모델이면 비용은 모른다
+        return 0.0
