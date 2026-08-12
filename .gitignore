@@ -30,3 +30,11 @@ reports/*
 
 # 단, 샘플 1,000건은 커밋한다 — 다운로드 없이 더러움을 관찰할 수 있어야 한다
 !data/sample/
+
+# 배포용 아카이브 — 수 GB짜리가 git add -A에 쓸려 들어가는 사고를 막는다
+*.tar.gz
+*.tgz
+*.zip
+data/dist/*
+!data/dist/.gitkeep
+data/MANIFEST.json
