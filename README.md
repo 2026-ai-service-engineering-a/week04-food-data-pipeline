@@ -24,17 +24,31 @@
 **v0.1 태그**에서 작업 브랜치를 잡습니다.
 
 ```bash
+# 1. 시작점 잡기
 git clone https://github.com/2026-ai-service-engineering-a/week04-food-data-pipeline.git
 cd week04-food-data-pipeline
 git switch -c week04 v0.1
 
+# 2. 키 넣기 (질의 임베딩용 — 없어도 뜹니다)
 cp .env.example .env
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# 3. 벡터 인덱스 받기 (1.6GB)
+#    https://drive.google.com/file/d/1hiS6EaDuYY4P2O5RKoDzN1PL4tEFJNWb/view
+mkdir -p data/dist && mv ~/Downloads/chroma_foods.tar.gz data/dist/
+
+# 4. 띄우기
+docker compose up --build
 ```
 
 - UI: http://localhost:8501 · API 문서(Swagger): http://localhost:8000/docs
-- v0.1은 **키 없이도 뜹니다** — UI에 "데이터가 아직 없습니다" 빈 상태 화면이 나옵니다
-- v0.1이 v1.0이 되는 순간은 코드가 아니라 **이 화면이 채워지는 순간**입니다
+- 첫 기동은 아카이브를 푸느라 몇 분 걸리고, 그다음부터는 몇 초입니다
+- 3번을 건너뛰어도 뜹니다. 의미 검색만 빠지고, 받는 법을 로그에 안내합니다
+- 2번을 건너뛰어도 뜹니다. 검색을 시도하면 무엇을 채우면 되는지 알려줍니다
+
+**메인 화면은 일부러 비어 있습니다.** "데이터가 아직 없습니다"가 정상이고,
+v0.1이 v1.0이 되는 순간은 코드가 아니라 **이 화면이 채워지는 순간**입니다.
+사이드바의 **임베딩 비교** 페이지는 처음부터 동작합니다 — 시연 흐름이 아니라
+실험 도구라서요.
 
 회전마다 릴리즈 태그를 자릅니다. 태그 하나가 "이 지점의 코드 + 이 지점의 데이터"를
 가리킵니다.
@@ -43,7 +57,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 | --- | --- | --- | --- |
 | 1회전 정제 + 섭취참고량 파싱 | `feature/clean` | v0.2 | `foods_parsed.parquet` · `clean_report.txt` · `parse_report.txt` · `rejected.csv` |
 | 2회전 PostgreSQL 검색 서비스 | `feature/pg-service` | v0.3 | `foods.dump` (pg_dump) |
-| 3회전 RAG 검색 | `feature/rag-search` | v1.0 | `chroma_foods.tar.gz` (Google Drive) · `embed_report.txt` |
+| 3회전 RAG 검색 | `feature/rag-search` | v1.0 | `foods.dump` 위 RAG API · `embed_report.txt` |
 
 ## 데이터
 
@@ -194,6 +208,9 @@ docker compose exec api uv run python scripts/make_sample.py \
 30만 건 임베딩은 세 시간에 $2.29이고, 이미 돌려서 배포해 뒀습니다.
 
 ### 학생이 할 일은 두 줄입니다
+
+[**chroma_foods.tar.gz 내려받기**](https://drive.google.com/file/d/1hiS6EaDuYY4P2O5RKoDzN1PL4tEFJNWb/view)
+(1.6GB · SHA-256 `f61cfc6e892447f05fd5bf76f42cbfd59285188a0949b0f4d945861b17e455f6`)
 
 ```bash
 mkdir -p data/dist
