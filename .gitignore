@@ -34,3 +34,10 @@ reports/*
 # 받아온 배포물 (수 GB) — 커밋하지 않는다
 data/dist/*
 !data/dist/.gitkeep
+
+# macOS 부스러기
+.DS_Store
+._*
+
+# 복원할 때 아카이브가 풀어놓는 매니페스트 (배포물의 일부지 소스가 아니다)
+data/MANIFEST.json

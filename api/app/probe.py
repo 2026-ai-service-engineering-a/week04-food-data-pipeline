@@ -53,11 +53,31 @@ def collection(mode: str):
 
 
 def embed_query(q: str) -> list[float]:
+    """질의를 벡터로. 인덱스가 배포돼 있어도 **이 한 번은 API를 부른다.**
+
+    색인은 받아 쓸 수 있지만 질의는 그때그때 임베딩해야 한다. 질의 한 건이라
+    사실상 공짜지만, 키가 없으면 여기서 막힌다. 학생이 가장 자주 밟는 자리라
+    "왜 안 되는지"를 분명히 말해야 한다.
+    """
     import litellm
 
-    res = litellm.embedding(
-        model=MODEL, input=[q], dimensions=DIM, task_type="RETRIEVAL_QUERY"
-    )
+    try:
+        res = litellm.embedding(
+            model=MODEL, input=[q], dimensions=DIM, task_type="RETRIEVAL_QUERY"
+        )
+    except Exception as exc:  # noqa: BLE001
+        name = type(exc).__name__
+        if "auth" in name.lower() or "AuthenticationError" in name or not os.environ.get(
+            "GEMINI_API_KEY", ""
+        ):
+            raise HTTPException(
+                503,
+                "질의를 임베딩할 수 없습니다. 인덱스는 받아 쓸 수 있어도 "
+                "질의 임베딩에는 키가 필요합니다. `cp .env.example .env` 후 "
+                "GEMINI_API_KEY를 채우고 `docker compose up -d --force-recreate api` 하세요",
+            ) from exc
+        raise HTTPException(503, f"임베딩 호출 실패({name}): {str(exc)[:200]}") from exc
+
     v = np.array(res.data[0]["embedding"], dtype=np.float32)
     # 축소된 벡터는 norm이 1이 아니다. 색인 쪽도 정규화해 넣었으므로 질의도 맞춘다
     return (v / max(float(np.linalg.norm(v)), 1e-9)).tolist()

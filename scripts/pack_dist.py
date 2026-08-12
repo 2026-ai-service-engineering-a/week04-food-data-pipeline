@@ -44,6 +44,18 @@ VECTOR_FILES = [".probe_A.f32", ".probe_C.f32", ".probe_A.done", ".probe_C.done"
                 ".probe_source.parquet"]
 
 
+# macOS에서 tar를 말면 .DS_Store와 ._ 리소스포크가 딸려 간다. 학생이 받을
+# 아카이브에 들어갈 이유가 없고, 받는 쪽에서 "이게 뭔가" 하게 만든다.
+JUNK = (".DS_Store", "._", ".AppleDouble", "__MACOSX")
+
+
+def drop_junk(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+    base = info.name.rsplit("/", 1)[-1]
+    if base.startswith("._") or base in JUNK:
+        return None
+    return info
+
+
 def sha256(path: Path) -> str:
     h = hashlib.sha256()
     with path.open("rb") as f:
@@ -95,7 +107,7 @@ def pack(name: str, kind: str, members: list[tuple[Path, str]]) -> Path | None:
     with tarfile.open(out, "w:gz") as tar:
         tar.add(tmp_manifest, arcname="MANIFEST.json")
         for src, arc in members:
-            tar.add(src, arcname=arc)
+            tar.add(src, arcname=arc, filter=drop_junk)
     tmp_manifest.unlink()
     size = out.stat().st_size / 1024 ** 3
     print(f"[pack] {name} · {size:.2f}GB · sha256 {sha256(out)[:16]}…")
