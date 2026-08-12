@@ -193,41 +193,83 @@ docker compose exec api uv run python scripts/make_sample.py \
 의미 검색을 쓰려면 벡터 인덱스가 있어야 합니다. **직접 임베딩하지 마세요.**
 30만 건 임베딩은 세 시간에 $2.29이고, 이미 돌려서 배포해 뒀습니다.
 
-### 방법 1: chroma 인덱스를 그대로 받기 (권장, 빌드 없음)
+### 학생이 할 일은 두 줄입니다
 
 ```bash
 mkdir -p data/dist
-# 릴리즈/Drive에서 받은 파일을 data/dist/ 에 둡니다
-mv ~/Downloads/chroma_foods.tar.gz data/dist/
+mv ~/Downloads/chroma_foods.tar.gz data/dist/     # 받은 파일을 여기 둔다
 
-docker compose up
+docker compose up                                  # 끝
 ```
 
-끝입니다. `index-restore` 서비스가 압축을 풀고, `chroma`가 그 위에서 뜨고,
-`index-load`는 이미 차 있는 걸 보고 그냥 나갑니다. **한 번 풀리고 나면 다음
-`compose up`부터는 아무 일도 일어나지 않습니다** (멱등).
+압축을 직접 풀 필요도, 경로를 맞출 필요도 없습니다. compose가 순서대로 밟습니다.
+
+```
+index-restore  →  chroma  →  index-load  →  api  →  ui
+   아카이브를 푼다   그 위에서 뜬다   비었으면 채운다   그 뒤에 뜬다
+```
 
 ```
 [restore] chroma_foods.tar.gz 를 풉니다 (몇 분 걸립니다)
-[restore] 완료 — 빌드 없이 바로 씁니다
+[restore] 완료 — 적재 없이 바로 씁니다
+[restore] 받은 인덱스 정보:
+  만든 날짜: 2026-08-12T07:52:11Z
+  chroma 버전: chromadb/chroma:1.5.9
+  임베딩 모델: gemini/gemini-embedding-001
 [C] foods_name_cat 이미 265,986건 — 건너뜁니다
-[A] foods_name 이미 262,205건 — 건너뜁니다
 ```
 
-### 방법 2: 벡터 파일을 받아 직접 적재 (더 작게 받기)
+- **멱등합니다.** 두 번째 `compose up`부터는 아무 일도 일어나지 않습니다.
+- **배포물이 없어도 뜹니다.** 받는 법을 출력하고 의미 검색만 빠집니다.
+- 순서는 `depends_on: service_completed_successfully`가 강제합니다. 반쯤 풀린 디렉터리를 열거나 반쯤 찬 컬렉션으로 검색하는 사고가 구조적으로 막힙니다.
+
+### 아카이브 두 가지
+
+| | 받는 용량 | 첫 기동 | 결합 |
+| --- | --- | --- | --- |
+| `chroma_foods.tar.gz` | 1.6GB | 압축 풀기만 | chroma 버전에 묶임 |
+| `probe_vectors.tar.gz` | 1.4GB | + 적재 8분 | 없음 (그냥 float32 배열) |
+
+둘 다 `data/dist/`에 두면 됩니다. `restore.sh`가 있는 쪽을 골라 씁니다.
+**어느 쪽도 임베딩 API를 부르지 않습니다.**
+
+chroma 버전이 안 맞아 색인이 안 열리면 `probe_vectors.tar.gz` 쪽으로 가세요.
+그쪽은 float32 배열이라 어떤 버전에도 적재됩니다.
+
+### `data/chroma/` 안의 UUID 폴더는 무엇인가
+
+압축을 풀면 `221a5ffe-f667-…` 같은 폴더가 보입니다. 사람이 붙인 이름이 아니라
+**컬렉션 세그먼트 ID**이고, 같은 디렉터리의 `chroma.sqlite3`가 참조하는 값입니다.
+
+```sql
+select id, name from collections;
+-- 0279c37c-…  foods_name
+-- d9adb957-…  foods_name_cat
+select id, collection from segments;
+-- 221a5ffe-…  0279c37c-…
+```
+
+그래서 **디렉터리 통째로가 이식 단위**입니다. 일부만 옮기거나 폴더 이름을 바꾸면
+깨집니다. 아카이브가 `data/chroma/` 전체를 담는 이유입니다.
+
+호스트 종류는 상관없습니다. arm64(Apple Silicon)에서 만든 색인을 x86_64에서
+열어 같은 결과가 나오는 것을 확인했습니다.
+
+### 배포물을 다시 만들 때
 
 ```bash
-mv ~/Downloads/probe_vectors.tar.gz data/dist/
-docker compose up          # 풀고 → 적재까지 자동, 약 8분
+docker compose stop chroma                              # 스냅샷은 정지 상태에서
+docker compose exec api uv run python scripts/pack_dist.py
 ```
 
-받는 용량은 작지만 적재에 시간이 듭니다. 어느 쪽이든 **임베딩 API는 부르지
-않습니다.**
+`MANIFEST.json`(만든 날짜·chroma 버전·임베딩 모델·HNSW 설정·컬렉션 건수)이
+아카이브 안에 함께 들어가고, `data/dist/MANIFEST.json`에 각 아카이브의 SHA-256이
+남습니다. **받는 쪽이 "이게 내 환경에 맞나"를 물을 수 있어야 합니다.**
 
-| | 받는 용량 | 첫 기동 |
-| --- | --- | --- |
-| chroma 인덱스 | 약 2GB | 압축 풀기만 |
-| 벡터 파일 | 약 1.5GB | + 적재 8분 |
+포장 전에 `data/chroma/`가 깨끗한지 확인하세요. Chroma는 `delete_collection` 후에도
+세그먼트 디렉터리를 지우지 않아서, 지웠던 컬렉션이 아카이브에 딸려 갑니다
+(2.3GB짜리가 3.9GB가 된 적이 있습니다). 미심쩍으면 `data/chroma`를 비우고
+`docker compose run --rm index-load`로 다시 채우세요.
 
 ### 컬렉션 두 개
 
@@ -265,7 +307,8 @@ HNSW = {"space": "cosine", "max_neighbors": 32, "ef_construction": 200, "ef_sear
 │   └── dist/              #   받아온 배포물을 두는 곳 (여기 두면 자동 복원)
 ├── reports/               # 정제는 코드가 아니라 리포트로 검증한다
 ├── scripts/               # download_file · download_api · make_sample
-│                          #   embed_probe(임베딩 A/B) · load_chroma(적재)
+│                          #   embed_probe(A/B) · load_chroma(적재)
+│                          #   restore.sh(자동 복원) · pack_dist(배포물 포장)
 ├── docker-compose.yml     # api + ui + chroma + index-restore + index-load
 │                          #   (db는 2회전, chroma는 3회전이 추가)
 └── PROMPT.md              # 회전별 지시 프롬프트 기록

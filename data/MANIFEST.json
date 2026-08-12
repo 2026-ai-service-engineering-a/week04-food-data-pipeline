@@ -1,0 +1,25 @@
+{
+ "kind": "chroma-index",
+ "created": "2026-08-12T09:56:12Z",
+ "source": "식약처 가공식품 DB 20260728판 (306,307행)",
+ "embedding_model": "gemini/gemini-embedding-001",
+ "dim": 768,
+ "hnsw": {
+  "space": "cosine",
+  "max_neighbors": 32,
+  "ef_construction": 200,
+  "ef_search": 200
+ },
+ "chroma_image": "chromadb/chroma:1.5.9",
+ "collections": [
+  {
+   "name": "foods_name",
+   "count": 262205
+  },
+  {
+   "name": "foods_name_cat",
+   "count": 265986
+  }
+ ],
+ "note": "풀 때는 data/ 를 기준으로: tar xzf <archive> -C data/"
+}

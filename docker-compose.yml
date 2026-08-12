@@ -40,25 +40,11 @@ services:
     container_name: food-pipeline-index-restore
     volumes:
       - ./data:/data
-    command: >
-      sh -c '
-      if [ -f /data/chroma/chroma.sqlite3 ]; then
-        echo "[restore] chroma 인덱스가 이미 있습니다 — 건너뜁니다";
-      elif [ -f /data/dist/chroma_foods.tar.gz ]; then
-        echo "[restore] chroma_foods.tar.gz 를 풉니다 (2.2GB, 몇 분 걸립니다)";
-        mkdir -p /data/chroma && tar xzf /data/dist/chroma_foods.tar.gz -C /data/chroma &&
-        echo "[restore] 완료 — 빌드 없이 바로 씁니다";
-      elif [ -f /data/dist/probe_vectors.tar.gz ] && [ ! -f /data/clean/.probe_C.f32 ]; then
-        echo "[restore] probe_vectors.tar.gz 를 풉니다 (1.5GB)";
-        mkdir -p /data/clean && tar xzf /data/dist/probe_vectors.tar.gz -C /data/clean &&
-        echo "[restore] 완료 — index-load가 이어서 chroma에 적재합니다 (약 8분)";
-      elif [ -f /data/clean/.probe_C.f32 ]; then
-        echo "[restore] 벡터 파일이 있습니다 — index-load가 적재합니다";
-      else
-        echo "[restore] 배포물이 없습니다. 의미 검색 없이 뜹니다.";
-        echo "  받아서 쓰기: 릴리즈의 chroma_foods.tar.gz 를 data/dist/ 에 두고 다시 compose up";
-        echo "  직접 만들기: docker compose run --rm index-load";
-      fi'
+      - ./scripts:/scripts:ro
+    environment:
+      # 아카이브의 매니페스트와 대조해 버전 어긋남을 경고한다
+      CHROMA_IMAGE: chromadb/chroma:1.5.9
+    command: ["sh", "/scripts/restore.sh"]
 
   chroma:
     image: chromadb/chroma:1.5.9 # 클라이언트와 버전을 맞춘다. 배포 인덱스도 이 버전 기준이다

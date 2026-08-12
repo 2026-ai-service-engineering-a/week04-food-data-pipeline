@@ -142,15 +142,25 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=2000)
     args = ap.parse_args()
 
-    if not SOURCE.exists():
-        print(f"{SOURCE} 없음 — scripts/embed_probe.py를 먼저 돌리세요", file=sys.stderr)
-        return 1
-
     import chromadb
 
     client = chromadb.HttpClient(host=HOST, port=PORT)
     wait_for_chroma(client)
     print(f"[chroma] {HOST}:{PORT} 연결")
+
+    # 적재할 것이 없는 것은 실패가 아니다.
+    #   chroma 인덱스를 통째로 받은 학생에게는 벡터 파일이 없고, 그게 정상이다.
+    #   여기서 1을 돌려주면 api가 depends_on에 걸려 아예 뜨지 않는다.
+    #   "할 일이 없음"과 "실패"를 구분하지 않으면 정상 경로가 막힌다.
+    if not SOURCE.exists():
+        filled = [c for c in client.list_collections()
+                  if client.get_collection(c if isinstance(c, str) else c.name).count() > 0]
+        if filled:
+            print(f"[skip] 벡터 파일이 없지만 컬렉션이 이미 차 있습니다 ({len(filled)}개)")
+        else:
+            print("[skip] 적재할 벡터도 컬렉션도 없습니다. 의미 검색 없이 뜹니다.")
+            print("       받아서 쓰기: chroma_foods.tar.gz 또는 probe_vectors.tar.gz 를 data/dist/ 에")
+        return 0
 
     df = pd.read_parquet(SOURCE).fillna("")
     print(f"[source] {len(df):,}행")
