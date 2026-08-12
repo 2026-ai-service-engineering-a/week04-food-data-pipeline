@@ -267,6 +267,19 @@ rm -rf data/chroma/*                    # 기존 색인을 비우고
 HNSW_M=64 docker compose run --rm index-load   # 다른 설정으로 다시
 ```
 
+### 사본을 두 개 띄울 때 (멘토용)
+
+작업용 저장소와 테스트용 클론을 동시에 띄우려면 **프로젝트 이름을 구분**해야
+합니다. compose는 프로젝트 이름을 디렉터리 이름에서 가져오는데, 클론한 폴더
+이름이 같으면 같은 프로젝트로 보고 **나중에 띄운 쪽이 앞의 컨테이너를 가져갑니다.**
+조용히 일어나서 알아채기 어렵습니다.
+
+```bash
+COMPOSE_PROJECT_NAME=week04-test docker compose up -d   # 또는 -p week04-test
+```
+
+포트도 겹치니 한쪽만 띄우거나 `docker-compose.dev.yml`에서 포트를 바꾸세요.
+
 ### 배포물을 다시 만들 때 (멘토용)
 
 ```bash
