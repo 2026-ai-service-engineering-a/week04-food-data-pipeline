@@ -1,5 +1,5 @@
 # 공통 정의 — v0.1은 api + ui 두 서비스뿐이다.
-#   db(PostgreSQL) 서비스는 3회전이, chroma(벡터 DB) 서비스는 4회전이 더한다.
+#   db(PostgreSQL) 서비스는 2회전이, chroma(벡터 DB) 서비스는 3회전이 더한다.
 #   인프라가 필요해지면 블록 하나를 더하는 것, 그것이 compose를 쓰는 이유다.
 #
 #   실행 모드: docker compose up --build

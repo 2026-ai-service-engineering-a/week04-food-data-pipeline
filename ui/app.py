@@ -6,9 +6,9 @@
 이것이 헤드리스 분리의 증명이다 (3주차와 같은 장면).
 
 세 탭은 API의 세 계층에 1:1로 대응한다:
-  검색  → GET /foods           SQL     (3회전, 공짜)
-  의미 검색 → GET /foods/semantic 임베딩  (4회전, 싸다)
-  질문  → POST /ask            LLM     (4회전, 비싸다)
+  검색  → GET /foods           SQL     (2회전, 공짜)
+  의미 검색 → GET /foods/semantic 임베딩  (3회전, 싸다)
+  질문  → POST /ask            LLM     (3회전, 비싸다)
 탭 순서가 곧 비용 사다리다.
 """
 
@@ -59,15 +59,15 @@ if probe.get("total", 0) == 0:
     st.code(
         "# 1) 원본 받기 (187MB — 레포 밖)\n"
         "docker compose exec api uv run python scripts/download_file.py\n\n"
-        "# 2) 정제 (1회전)\n"
+        "# 2) 정제 + 섭취참고량 파싱 (1회전)\n"
         "docker compose exec api uv run python -m pipeline.clean \\\n"
-        "  --input data/raw/가공식품DB.xlsx --output data/clean/foods_clean.parquet\n\n"
-        "# 3) 섭취참고량 파싱 (2회전)\n"
-        "docker compose exec api uv run python -m pipeline.serving_parse \\\n"
+        "  --input data/raw/가공식품DB.xlsx --output data/clean/foods_clean.parquet\n"
+        "docker compose exec api uv run python -m pipeline.serving \\\n"
         "  --input data/clean/foods_clean.parquet\n\n"
-        "# 4) 적재 (3회전) · 임베딩 인덱스 (4회전)\n"
+        "# 3) PostgreSQL 적재 (2회전)\n"
         "docker compose exec api uv run python -m pipeline.load_pg \\\n"
-        "  --input data/clean/foods_parsed.parquet\n"
+        "  --input data/clean/foods_parsed.parquet\n\n"
+        "# 4) 임베딩 인덱스 (3회전)\n"
         "docker compose exec api uv run python -m pipeline.embed_index",
         language="bash",
     )
@@ -129,7 +129,7 @@ with tab_search:
             right.write("**1회 제공량 기준**")
             per_serving = detail.get("per_serving") or {}
             if per_serving.get("serving_g") is None:
-                # 2회전의 정직한 NULL이 화면까지 그대로 온다 — 지어내지 않는다
+                # 1회전의 정직한 NULL이 화면까지 그대로 온다 — 지어내지 않는다
                 right.warning(per_serving.get("note", "1회 제공량 정보 없음"))
             else:
                 right.json(per_serving)
