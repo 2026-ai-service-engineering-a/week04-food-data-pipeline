@@ -10,6 +10,7 @@ CI에는 PostgreSQL도, LLM 키도, 187MB 원본도 없다. 그 조건에서 도
 
 from fastapi.testclient import TestClient
 
+from app import foods
 from app.main import app
 
 client = TestClient(app)
@@ -21,12 +22,16 @@ def test_health_ok():
     assert res.json()["status"] == "ok"
 
 
-def test_foods_degrades_to_empty_state_without_db():
+def test_foods_degrades_to_empty_state_without_db(monkeypatch):
     """db가 없는 것은 오류가 아니라 아직 그 회전이 안 온 것이다.
 
     500도 503도 아닌 200과 빈 목록으로 답해야 한다. UI는 이 응답 하나로
     "데이터가 있나"를 판단하므로, 여기서 예외가 나면 화면이 통째로 죽는다.
+
+    db를 **명시적으로 끊고** 검사한다. 그냥 호출하면 CI에서는 통과하고
+    개발 환경에서는 실패한다. 환경에 따라 결과가 갈리는 것은 테스트가 아니다.
     """
+    monkeypatch.setattr(foods, "DATABASE_URL", "postgresql://nobody@127.0.0.1:1/none")
     body = client.get("/foods").json()
     assert body["total"] == 0
     assert body["items"] == []
