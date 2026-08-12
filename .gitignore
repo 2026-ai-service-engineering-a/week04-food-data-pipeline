@@ -39,5 +39,8 @@ data/dist/*
 .DS_Store
 ._*
 
-# 복원할 때 아카이브가 풀어놓는 매니페스트 (배포물의 일부지 소스가 아니다)
+# 배포용 아카이브 — 수 GB짜리가 git add -A에 쓸려 들어가는 사고를 막는다
+*.tar.gz
+*.tgz
+*.zip
 data/MANIFEST.json
