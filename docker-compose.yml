@@ -1,0 +1,37 @@
+# 공통 정의 — v0.1은 api + ui 두 서비스뿐이다.
+#   db(PostgreSQL) 서비스는 2회전이, chroma(벡터 DB) 서비스는 3회전이 더한다.
+#   인프라가 필요해지면 블록 하나를 더하는 것, 그것이 compose를 쓰는 이유다.
+#
+#   실행 모드: docker compose up --build
+#   개발 모드: docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  api:
+    build: ./api
+    container_name: food-pipeline-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: .env
+        required: false # v0.1은 키 없이도 뜬다 (빈 상태 안내)
+    environment:
+      TZ: Asia/Seoul
+    volumes:
+      # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
+      # 컨테이너 안에서 쓰기가 일어나므로 read-only가 아니다.
+      #   호스트에서 받은 187MB 원본을 data/raw/에 두면 컨테이너에 그대로 보인다.
+      #   배포된 산출물(parquet)을 data/clean/에 풀어 넣어도 마찬가지다.
+      - ./data:/app/data
+      - ./reports:/app/reports
+      - ./scripts:/app/scripts:ro
+
+  ui:
+    build: ./ui
+    container_name: food-pipeline-ui
+    ports:
+      - "8501:8501"
+    environment:
+      TZ: Asia/Seoul
+      # compose 네트워크에서 서비스 이름(api)이 곧 호스트명이다
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api

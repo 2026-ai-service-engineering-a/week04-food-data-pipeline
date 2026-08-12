@@ -1,0 +1,14 @@
+# 개발 오버라이드 — 별도 세계가 아니라 docker-compose.yml 위에 "덮어쓰기"다.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  api:
+    volumes:
+      - ./api:/app # 소스 마운트 — 코드 변경이 재빌드 없이 즉시 반영
+    environment:
+      LOG_LEVEL: debug # 배치 LLM의 프롬프트 전문·원출력·건별 비용까지 전부 보인다
+    command: uv run --no-sync uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  ui:
+    volumes:
+      - ./ui:/app
+    command: uv run --no-sync streamlit run app.py --server.port 8501 --server.address 0.0.0.0 --server.runOnSave true
