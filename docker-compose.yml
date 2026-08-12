@@ -1,6 +1,5 @@
 # 공통 정의 — v0.1은 api + ui 두 서비스뿐이다.
-#   db(PostgreSQL) 서비스는 2회전이 더한다.
-#   chroma(벡터 DB)와 index-restore는 3회전이 더한다.
+#   db(PostgreSQL) 서비스는 2회전이, chroma(벡터 DB) 서비스는 3회전이 더한다.
 #   인프라가 필요해지면 블록 하나를 더하는 것, 그것이 compose를 쓰는 이유다.
 #
 #   container_name을 쓰지 않는다. 이름을 고정하면 저장소 사본 두 개를 동시에
@@ -19,11 +18,12 @@ services:
         required: false # v0.1은 키 없이도 뜬다 (빈 상태 안내)
     environment:
       TZ: Asia/Seoul
-      CHROMA_HOST: chroma
-      CHROMA_PORT: "8000"
+      DATABASE_URL: postgresql://app:app@db:5432/food
     depends_on:
-      # 인덱스 적재가 끝난 뒤에 뜬다. 반쯤 찬 컬렉션으로 검색하는 사고를 막는다
-      index-load:
+      # 복원이 끝난 뒤에 뜬다. 반쯤 놓인 파일을 읽는 사고를 막는다
+      data-restore:
+        condition: service_completed_successfully
+      db-restore:
         condition: service_completed_successfully
     volumes:
       # data/는 파이프라인의 작업대다. 원본(raw)·정제 산출물(clean)·샘플이 모두 여기 있고,
@@ -34,51 +34,56 @@ services:
       - ./reports:/app/reports
       - ./scripts:/app/scripts:ro
 
-  # 배포된 벡터 인덱스를 자동 복원하는 일회성 서비스.
-  #   data/dist/chroma_foods.tar.gz 를 넣어두고 compose up 하면 알아서 풀린다.
-  #   이미 복원돼 있으면(chroma.sqlite3 존재) 아무 것도 하지 않는다 — 멱등하다.
-  #   "받는 방법은 레포 안"의 연장이다. 받은 것을 어디에 두면 되는지도 코드에 있다.
-  index-restore:
+  # 배포된 산출물을 제자리에 놓는 일회성 서비스.
+  #   릴리즈에서 받은 foods_parsed.parquet 를 data/dist/ 에 두고 compose up 하면
+  #   알아서 data/clean/ 으로 옮긴다. 이미 있으면 아무 것도 안 한다 (멱등).
+  #   배포물이 없어도 조용히 나간다 — 직접 정제할 사람에게는 없는 게 정상이다.
+  data-restore:
     image: alpine:3.20
     volumes:
       - ./data:/data
+      - ./reports:/reports
       - ./scripts:/scripts:ro
-    environment:
-      # 아카이브의 매니페스트와 대조해 버전 어긋남을 경고한다
-      CHROMA_IMAGE: chromadb/chroma:1.5.9
     command: ["sh", "/scripts/restore.sh"]
 
-  chroma:
-    image: chromadb/chroma:1.5.9 # 클라이언트와 버전을 맞춘다. 배포 인덱스도 이 버전 기준이다
-    volumes:
-      - ./data/chroma:/data
+  # 2회전이 더한 서비스. 2주차 PostgreSQL의 재등장이고, compose에서는
+  # 이렇게 블록 하나를 더하는 일이다. 3회전의 chroma가 같은 패턴을 반복한다.
+  db:
+    image: postgres:17-alpine
     environment:
       TZ: Asia/Seoul
-      IS_PERSISTENT: "TRUE"
-      ANONYMIZED_TELEMETRY: "FALSE"
-    depends_on:
-      # 복원이 끝난 뒤에 뜬다. 반쯤 풀린 디렉터리를 여는 사고를 막는다
-      index-restore:
-        condition: service_completed_successfully
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: food
+    volumes:
+      - ./data/pg:/var/lib/postgresql/data
+    healthcheck:
+      # api가 "떴다"가 아니라 "받을 준비가 됐다"를 기다리게 한다.
+      # depends_on만으로는 컨테이너 기동 순서까지만 보장된다
+      test: ["CMD-SHELL", "pg_isready -U app -d food"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
 
-  # 벡터 파일 → chroma 적재. compose up에서 자동으로 한 번 돌고 끝난다.
-  #   이미 적재됐거나 벡터 파일이 없으면 아무 것도 안 하고 나간다 (멱등하다).
-  #   임베딩은 하지 않는다 — 비싼 단계의 산출물은 파일로 받아 오고, 싼 적재만 여기서 한다.
-  #   일부만 다시 싣고 싶으면: docker compose run --rm index-load --only C
-  index-load:
-    build: ./api
-    volumes:
-      - ./data:/app/data
-      - ./scripts:/app/scripts:ro
-      - ./reports:/app/reports
+  # 배포된 pg 덤프를 복원하는 일회성 서비스.
+  #   parquet과 달리 덤프는 파일을 옮겨서 끝나지 않는다. db가 받을 준비가 된
+  #   뒤에 돌아야 하고, api는 이게 끝나기를 기다려야 한다.
+  db-restore:
+    image: postgres:17-alpine
     environment:
-      TZ: Asia/Seoul
-      CHROMA_HOST: chroma
-      CHROMA_PORT: "8000"
+      DATABASE_URL: postgresql://app:app@db:5432/food
+    volumes:
+      - ./data:/data
+      - ./scripts:/scripts:ro
     depends_on:
-      - chroma
-    entrypoint: ["uv", "run", "--no-sync", "python", "scripts/load_chroma.py"]
-    restart: "no"
+      db:
+        condition: service_healthy
+      # 덤프는 아카이브 안에 들어 있고, 그걸 꺼내 놓는 건 data-restore다.
+      # 이 줄이 없으면 둘이 동시에 돌아 "덤프가 없습니다"를 보고 나가는
+      # 경주가 된다. 그리고 그 경주는 대체로 이기다가 가끔 진다
+      data-restore:
+        condition: service_completed_successfully
+    command: ["sh", "/scripts/restore_db.sh"]
 
   ui:
     build: ./ui
