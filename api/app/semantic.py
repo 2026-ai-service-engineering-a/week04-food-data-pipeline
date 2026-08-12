@@ -70,33 +70,56 @@ def hydrate(codes: list[str]) -> dict[str, dict]:
             return {r["code"]: r for r in cur.fetchall()}
 
 
+# 상한 필터를 걸면 이만큼 넉넉히 받아 놓고 거른다. 색인에서 k개만 받아
+# 거르면 남는 게 k보다 적어진다
+OVERFETCH = 10
+
+
 def search(q: str, limit: int, sodium_max: float | None = None) -> list[dict]:
-    where = {"sodium_mg": {"$lte": sodium_max}} if sodium_max is not None else None
+    """의미로 k개를 뽑고, 숫자 조건은 **원본에서** 건다.
+
+    나트륨 상한을 chroma의 where로 걸 수도 있다. 그러려면 나트륨을 색인
+    메타데이터에도 복사해 둬야 하고, 그 순간 같은 값이 두 곳에 살게 된다.
+    원본이 갱신되면 색인의 사본은 조용히 옛날 값이 된다.
+
+    **의미는 색인이 알고, 숫자는 원본이 안다.** 각자 아는 것만 대답하게 한다.
+    대신 걸러낼 것을 감안해 넉넉히 받아 온다.
+    """
+    n = min(limit * OVERFETCH, 200) if sodium_max is not None else limit
     res = collection().query(
         query_embeddings=[embed_query(q)],
-        n_results=limit,
-        where=where,
+        n_results=n,
+        include=["metadatas", "distances"],
     )
-    codes = res["ids"][0]
+    # **id가 아니라 메타데이터의 code로 원본을 찾는다.** 색인의 id는 문장 번호다 —
+    # 이름과 분류가 같은 제품은 한 문장으로 접혀 있어서 id와 식품코드가 1:1이 아니다
+    metas = res["metadatas"][0]
+    codes = [m["code"] for m in metas]
     rows = hydrate(codes)
     items = []
-    for code, dist in zip(codes, res["distances"][0]):
-        row = rows.get(code)
+    for meta, dist in zip(metas, res["distances"][0]):
+        row = rows.get(meta["code"])
         if row is None:
             # 색인에는 있는데 원본에 없다. 인덱스가 원본보다 오래됐다는 뜻이라
             # 조용히 빠뜨리지 않고 남긴다
-            items.append({"code": code, "name": None, "score": round(1 - dist, 4),
-                          "note": "원본에 없는 코드 — 인덱스가 오래됐습니다"})
+            items.append({"code": meta["code"], "name": meta.get("name"),
+                          "score": round(1 - dist, 4),
+                          "note": "원본에 없는 코드 — 인덱스가 원본보다 오래됐습니다"})
             continue
+        if sodium_max is not None:
+            # 상한 필터는 NULL을 통과시키지 않는다. 2회전 /foods와 같은 규칙이다 —
+            # '모름'을 '이하'로 세면 저나트륨 검색이 거짓말을 한다
+            if row["sodium_mg"] is None or row["sodium_mg"] > sodium_max:
+                continue
         items.append({**row, "score": round(1 - dist, 4)})
-    return items
+    return items[:limit]
 
 
 @router.get("/foods/semantic")
 def semantic(
     q: str = Query(..., description="자연어 질의"),
     limit: int = Query(10, ge=1, le=50),
-    sodium_max: float | None = Query(None, description="나트륨 상한 (메타데이터 필터)"),
+    sodium_max: float | None = Query(None, description="나트륨 상한 (원본 기준)"),
 ) -> dict:
     """의미로 찾는다. 없으면 없다고 답하되 500으로 죽지는 않는다."""
     try:

@@ -14,6 +14,12 @@
 식품명만으로는 평균 10.4자라 의미 신호가 얕고, 제조사명은 벡터에 넣지 않는다 —
 제조사로 찾는 것은 SQL의 일이다.
 
+**같은 문장은 한 번만 임베딩한다.** 30만 행을 조립하면 고유 문장은 26.6만 개다
+(13.2%가 중복). 이름과 분류가 완전히 같은 두 제품은 벡터도 같을 수밖에 없으니,
+같은 것을 두 번 살 이유가 없다. id는 그래서 식품코드가 아니라 문장 번호(C:n)이고,
+식품코드는 메타데이터로 따라간다. 검색이 돌려준 코드로 원본을 조회하는 구조는
+그대로다 — **벡터 DB는 색인이고 원본은 PostgreSQL 한 곳**이다.
+
 사용법:
   docker compose run --rm index-load
   docker compose run --rm index-load --limit 1000
@@ -109,6 +115,20 @@ def sleep_for_retry(exc: Exception) -> float:
     return float(match.group(1)) if match else 10.0
 
 
+def dedupe(rows: list[dict]) -> list[dict]:
+    """조립한 문장으로 접는다. 1회전의 nunique()가 여기서 한 번 더 나온다.
+
+    접히는 비율은 13.2%다. 34개로 접히던 섭취참고량과는 자릿수가 다르지만,
+    **접을 수 있는 만큼은 접는다**는 원칙은 같다.
+    """
+    seen: dict[str, dict] = {}
+    for row in rows:
+        text = assemble(row)
+        if text not in seen:
+            seen[text] = {**row, "text": text}
+    return [{**v, "id": f"C:{i}"} for i, (_, v) in enumerate(sorted(seen.items()))]
+
+
 def fetch_rows(limit: int | None) -> list[dict]:
     import psycopg
     from psycopg.rows import dict_row
@@ -129,7 +149,13 @@ def get_collection():
     client = chromadb.HttpClient(host=CHROMA_HOST, port=CHROMA_PORT)
     return client.get_or_create_collection(
         COLLECTION,
-        metadata={f"hnsw:{k}": v for k, v in HNSW.items()},
+        # 임베딩은 우리가 직접 넣는다. chroma가 다시 계산하게 두면
+        # 모델도 차원도 우리가 정한 것과 달라진다
+        embedding_function=None,
+        metadata={"recipe": "name+cat", "dim": DIM, "model": MODEL},
+        # HNSW는 metadata가 아니라 configuration으로 준다. metadata에 넣으면
+        # "Failed to parse hnsw parameters from segment metadata"로 죽는다
+        configuration={"hnsw": HNSW},
     )
 
 
@@ -156,12 +182,15 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    docs = dedupe(rows)
     collection = get_collection()
-    done = already_indexed(collection, [r["code"] for r in rows])
-    todo = [r for r in rows if r["code"] not in done]
+    done = already_indexed(collection, [d["id"] for d in docs])
+    todo = [d for d in docs if d["id"] not in done]
 
     print(f"[index] {COLLECTION} · {MODEL} · {DIM}차원 · 배치 {args.batch}")
-    print(f"[index] 대상 {len(rows):,}행 · 이미 있음 {len(done):,} · 넣을 것 {len(todo):,}")
+    print(f"[count] {len(rows):,}행 → 고유 문장 {len(docs):,}건 "
+          f"(중복 제거 {100 - len(docs) / len(rows) * 100:.1f}%)")
+    print(f"[index] 이미 있음 {len(done):,} · 넣을 것 {len(todo):,}")
     if not todo:
         # "할 일이 없음"은 실패가 아니다. compose가 이 종료 코드를 본다
         print("[done ] 이미 다 들어 있습니다")
@@ -170,7 +199,7 @@ def main() -> int:
     tokens = retries = 0
     for i in range(0, len(todo), args.batch):
         chunk = todo[i:i + args.batch]
-        texts = [assemble(r) for r in chunk]
+        texts = [d["text"] for d in chunk]
         while True:
             try:
                 vectors, used = embed(texts, "RETRIEVAL_DOCUMENT")
@@ -184,14 +213,17 @@ def main() -> int:
                 time.sleep(wait)
 
         collection.add(
-            ids=[r["code"] for r in chunk],
+            ids=[d["id"] for d in chunk],
             embeddings=vectors,
             documents=texts,
-            # 메타데이터는 **where 필터용만**이다. 답에 쓸 내용은 식품코드로
-            # PostgreSQL 원본에서 꺼낸다. 벡터 DB는 색인이지 원본이 아니다
-            metadatas=[{"category_big": r["category_big"] or "",
-                        "maker": r["maker"] or "",
-                        "sodium_mg": float(r["sodium_mg"] or -1)} for r in chunk],
+            # code는 **원본으로 돌아가는 열쇠**이고, 나머지는 where 필터용이다.
+            # 답에 쓸 값은 여기 있는 것이 아니라 code로 PostgreSQL에서 꺼낸다.
+            # 벡터 DB는 색인이지 원본이 아니다
+            metadatas=[{"code": d["code"],
+                        "name": d["name"],
+                        "category_big": d["category_big"] or "",
+                        "maker": d["maker"] or "",
+                        "sodium_mg": float(d["sodium_mg"] or -1)} for d in chunk],
         )
 
         seen = i + len(chunk)
@@ -207,6 +239,7 @@ def main() -> int:
     lines = [
         f"[index] {COLLECTION} · {MODEL} · {DIM}차원",
         f"[index] HNSW {HNSW}",
+        f"[count] {len(rows):,}행 → 고유 문장 {len(docs):,}건",
         f"[embed] {len(todo):,}건 · 입력 {tokens:,} tok · ${cost:.2f} · 429 재시도 {retries}회",
         f"[done ] 컬렉션 {total:,}건 · 소요 {elapsed / 60:.0f}분",
     ]
