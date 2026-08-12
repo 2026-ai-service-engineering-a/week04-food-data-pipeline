@@ -110,6 +110,8 @@ def main() -> int:
     ap.add_argument("--llm-limit", type=int, default=int(os.environ.get("LLM_LIMIT", "100")))
     ap.add_argument("--show-residual", action="store_true", help="규칙이 못 푼 고유값을 전부 출력")
     ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="판정만 하고 parquet을 쓰지 않는다 (디버그 관찰용)")
     ap.add_argument("--debug", action="store_true")
     args = ap.parse_args()
 
@@ -134,6 +136,20 @@ def main() -> int:
             print(f"  {rows.get(t, 0):>7,}  {t}")
         return 0
 
+    # 상한을 걸고 돌리면 나머지 고유값이 'none'으로 남는다. 그 결과를 그대로
+    # 저장하면 **완성된 산출물이 반쪽으로 덮인다.** 디버그로 한 건만 보려던
+    # 실행이 30만 행짜리 결과를 망가뜨리는 일이 실제로 있었다.
+    # 관찰용 실행에는 --dry-run을 붙이게 하고, 안 붙였으면 미리 막는다.
+    residual_n = sum(1 for t in uniq if parse_rule(t) is None)
+    if not args.dry_run and args.llm_limit < residual_n and Path(args.output).exists():
+        print(f"[abort] --llm-limit {args.llm_limit}로는 잔여 {residual_n}개를 다 못 풉니다.",
+              file=sys.stderr)
+        print(f"        지금 저장하면 기존 {args.output}이 반쪽 결과로 덮입니다.",
+              file=sys.stderr)
+        print("        관찰만 하려면 --dry-run, 정말 다시 만들려면 상한을 올리세요.",
+              file=sys.stderr)
+        return 2
+
     cache = {} if args.no_cache else load_cache()
     cached_before = len(cache)
     decisions, usage = classify(uniq, cache, args.llm_limit, args.debug)
@@ -154,8 +170,11 @@ def main() -> int:
         if pd.notna(t) else "[]")
 
     out = Path(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    df.to_parquet(out, index=False)
+    if args.dry_run:
+        print(f"[dry  ] --dry-run이라 {out}을 쓰지 않습니다")
+    else:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(out, index=False)
 
     by_method = df["parse_method"].value_counts().to_dict()
     uniq_by = {}
