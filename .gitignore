@@ -20,7 +20,7 @@ data/raw/*
 data/clean/*
 !data/clean/.gitkeep
 
-# 서비스 볼륨 — 3회전(db)·4회전(chroma)이 채운다
+# 서비스 볼륨 — 2회전(db)·3회전(chroma)이 채운다
 data/pg/
 data/chroma/
 
