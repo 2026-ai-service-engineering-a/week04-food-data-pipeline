@@ -84,7 +84,8 @@ done = sum(1 for _, _, ok in steps if ok)
 st.progress(done / len(steps), text=f"파이프라인 {done}/{len(steps)} 단계 완료")
 cols = st.columns(len(steps))
 for col, (label, made_by, ok) in zip(cols, steps):
-    col.markdown(f"**{'✅' if ok else '◻️'} {label}**")
+    # 이모지 대신 기하 문자를 쓴다. ⬜·◻️ 계열은 폰트에 따라 빈 네모로 깨진다
+    col.markdown(f"{':green[●]' if ok else ':gray[○]'} **{label}**")
     col.caption(made_by)
 
 if not has_search:
