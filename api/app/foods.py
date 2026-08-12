@@ -35,6 +35,11 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://app:app@db:5432/food
 
 # 정렬은 화이트리스트로만 받는다. 문자열을 SQL에 이어 붙이는 자리라
 # 사용자 입력이 그대로 들어가면 그게 곧 주입이다
+#
+# 값 하나만으로 정렬하면 **동점 사이 순서가 정해져 있지 않다.** 나트륨 0인
+# 행만 27,219개라 동점은 예외가 아니라 기본이고, 순서가 매 질의마다 달라도
+# 되는 것으로 취급되면 1페이지에 나온 행이 2페이지에 또 나온다. 실제로 그랬다.
+# 그래서 마지막에 code를 붙여 **전순서**로 만든다 (SORT_TIEBREAK).
 SORTS = {
     "sodium_asc": "sodium_mg asc nulls last",
     "sodium_desc": "sodium_mg desc nulls last",
@@ -44,6 +49,9 @@ SORTS = {
     "energy_desc": "energy_kcal desc nulls last",
     "name": "name asc",
 }
+
+# 모든 정렬의 마지막 키. 유일한 값이라 여기서 동점이 완전히 사라진다
+SORT_TIEBREAK = "code asc"
 
 NUTRIENTS = ["energy_kcal", "protein_g", "fat_g", "carb_g", "sugar_g", "sodium_mg",
              "saturated_fat_g", "trans_fat_g", "cholesterol_mg"]
@@ -108,7 +116,7 @@ def search(
             cur.execute(
                 f"select code, name, category_big, category_mid, maker,"
                 f" energy_kcal, sodium_mg, sugar_g, serving_g, parse_method"
-                f" from foods{clause} order by {SORTS[sort]}"
+                f" from foods{clause} order by {SORTS[sort]}, {SORT_TIEBREAK}"
                 f" limit %(limit)s offset %(offset)s",
                 {**params, "limit": limit, "offset": offset},
             )
