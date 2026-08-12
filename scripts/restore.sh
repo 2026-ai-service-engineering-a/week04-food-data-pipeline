@@ -21,8 +21,8 @@ say() { echo "[restore] $*"; }
 mkdir -p "$CLEAN"
 placed=0
 
-# 회전 산출물 묶음. 아카이브 안의 경로가 풀리는 자리와 같게 만들어져 있어서
-# 그냥 풀면 된다 (clean/… → data/clean/, reports/… → reports/).
+# 회전 산출물 묶음. 아카이브 안이 저장소 구조 그대로라(data/clean/… reports/…)
+# 어디로 가는지 아카이브를 열어보면 안다. 여기서는 그 경로대로 풀어 준다.
 # 낱개 파일보다 이쪽이 먼저다 — 받는 사람이 한 번만 받으면 되게.
 for archive in "$DIST"/week04-*-data.tar.gz; do
   [ -f "$archive" ] || continue
@@ -31,13 +31,11 @@ for archive in "$DIST"/week04-*-data.tar.gz; do
     continue
   fi
   say "$(basename "$archive") 를 풉니다"
-  tar xzf "$archive" -C /data
-  # 리포트는 data/ 밖에 산다. 옮기고 나면 임시로 생긴 자리는 치운다
-  if [ -d /data/reports ]; then
-    [ -d /reports ] && cp -f /data/reports/* /reports/ 2>/dev/null
-    rm -rf /data/reports
-  fi
-  say "완료 — clean/ 과 reports/ 에 놓았습니다"
+  # 컨테이너에는 저장소 루트가 아니라 /data와 /reports가 따로 붙어 있다.
+  # 앞의 한 칸씩을 벗겨 각자의 자리에 넣는다
+  tar xzf "$archive" -C /data --strip-components=1 data/clean
+  [ -d /reports ] && tar xzf "$archive" -C /reports --strip-components=1 reports
+  say "완료 — data/clean/ 과 reports/ 에 놓았습니다"
   placed=$((placed + 1))
 done
 
